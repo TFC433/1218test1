@@ -1,3 +1,5 @@
+// public/scripts/core/login.js
+
 document.addEventListener('DOMContentLoaded', () => {
     const loginForm = document.getElementById('login-form');
     const errorMessage = document.getElementById('error-message');
@@ -30,8 +32,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await response.json();
 
             if (response.ok && result.success) {
-                // 登入成功，儲存 Token 並跳轉
+                // 登入成功，儲存 Token
                 localStorage.setItem('crm-token', result.token);
+                
+                // 【關鍵修正】將後端回傳的姓名 (displayName) 儲存到 localStorage
+                // 這樣 main.js 的 CRM_APP.displayCurrentUser() 才能讀取到正確的名稱
+                if (result.name) {
+                    localStorage.setItem('crmCurrentUserName', result.name);
+                }
+
+                // 跳轉到儀表板
                 window.location.href = '/dashboard.html';
             } else {
                 // 登入失敗

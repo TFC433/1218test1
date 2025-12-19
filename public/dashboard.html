@@ -57,8 +57,7 @@
 
             <div class="sidebar-footer">
                 <button class="nav-link" id="sidebar-pin-toggle" title="切換側邊欄釘選狀態">
-                    <div class="nav-icon">
-                        </div>
+                    <div class="nav-icon"></div>
                     <span class="nav-text">收合側邊欄</span>
                 </button>
             </div>
@@ -125,7 +124,7 @@
                         <div class="grid-col-12 dashboard-widget" id="announcement-widget">
                             <div class="widget-header">
                                 <h2 class="widget-title">最新公告</h2>
-                                </div>
+                            </div>
                             <div class="widget-content">
                                 <div class="loading show"><div class="spinner"></div><p>載入公告中...</p></div>
                             </div>
@@ -169,14 +168,14 @@
                                 </div>
                                 <div class="stat-content">
                                     <div class="stat-number" id="followup-count">-</div>
-                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         <div class="grid-col-6 dashboard-widget" id="weekly-business-widget">
                             <div class="widget-header">
                                 <h2 class="widget-title" id="weekly-business-title">本週業務重點</h2>
-                                </div>
+                            </div>
                             <div class="widget-content">
                                 <div class="loading show"><div class="spinner"></div><p>載入中...</p></div>
                             </div>
@@ -196,7 +195,7 @@
                                  <h2 id="map-title" class="widget-title">全台機會分布</h2>
                                  <div class="map-filter">
                                      <select id="map-opportunity-filter" class="form-select-sm" onchange="window.mapManager.update(this.value)">
-                                         </select>
+                                     </select>
                                  </div>
                              </div>
                              <div class="map-container">
@@ -209,10 +208,9 @@
                         <div class="grid-col-12 dashboard-widget" id="kanban-widget">
                             <div class="widget-header">
                                 <h2 class="widget-title">機會階段看板</h2>
-                                <div class="kanban-controls-container">
-                                    </div>
+                                <div class="kanban-controls-container"></div>
                             </div>
-                            <div classs="kanban-board-wrapper">
+                            <div class="kanban-board-wrapper">
                                 <div class="kanban-board" id="kanban-board-container" style="display: none;">
                                     <div class="loading show"><div class="spinner"></div><p>載入看板資料中...</p></div>
                                 </div>
@@ -227,7 +225,8 @@
                 <div id="page-contacts" class="page-view" style="display: none;"></div>
                 <div id="page-opportunities" class="page-view" style="display: none;"></div>
                 <div id="page-sales-analysis" class="page-view" style="display: none;">
-                    <div class="loading show"><div class="spinner"></div></div> </div>
+                    <div class="loading show"><div class="spinner"></div></div>
+                </div>
                 <div id="page-companies" class="page-view" style="display: none;"></div>
                 <div id="page-interactions" class="page-view" style="display: none;"></div>
                 <div id="page-weekly-business" class="page-view" style="display: none;"></div>
@@ -272,6 +271,9 @@
     <script src="scripts/contacts/contacts.js" charset="UTF-8"></script>
 
     <script src="scripts/opportunities/opportunities.js" charset="UTF-8"></script>
+    
+    <script src="scripts/sales/sales-analysis-helper.js" charset="UTF-8"></script>
+    <script src="scripts/sales/sales-analysis-components.js" charset="UTF-8"></script>
     <script src="scripts/sales/sales-analysis.js" charset="UTF-8"></script>
     
     <script src="scripts/opportunities/details/opportunity-stepper.js" charset="UTF-8"></script>
