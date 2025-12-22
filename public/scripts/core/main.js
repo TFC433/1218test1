@@ -1,4 +1,4 @@
-// views/scripts/main.js (Fixed browser history navigation, Added refreshCurrentView, Added weekly-detail page handling)
+// public/scripts/core/main.js (Fixed browser history navigation, Added refreshCurrentView, Added weekly-detail page handling)
 
 // ==================== 全域命名空間 & 核心設定 ====================
 window.CRM_APP = {
@@ -21,7 +21,7 @@ window.CRM_APP = {
         'company-details': null,
         'opportunity-details': null
     },
-    formTemplates: {},
+    formTemplates: {}, // [修正] 恢復漏掉的樣板快取物件
     pageConfig: {
         // *** 修正：儀表板的 loaded 狀態不再重要，因為我們會強制刷新 ***
         'dashboard': { title: '儀表板', subtitle: '以機會為核心的客戶關係管理平台', loaded: false },
@@ -228,15 +228,6 @@ CRM_APP.init = async function() {
             showNotification('側邊欄功能初始化失敗，請嘗試強制刷新頁面。', 'error', 10000);
         }
 
-        // --- 關鍵修正：將儀表板的初始刷新移到 navigateTo 內部處理 ---
-        // console.log('[Main] 執行初始儀表板刷新...');
-        // if (window.dashboardManager && typeof window.dashboardManager.refresh === 'function') {
-        //     await window.dashboardManager.refresh();
-        //     console.log('[Main] 初始儀表板刷新完成。');
-        // } else {
-        //      console.warn('[Main] dashboardManager 未定義或 refresh 方法不存在，跳過初始刷新。');
-        // }
-
         if (window.kanbanBoardManager && typeof window.kanbanBoardManager.initialize === 'function') {
             window.kanbanBoardManager.initialize();
         } else {
@@ -290,7 +281,7 @@ CRM_APP.init = async function() {
     }
 };
 
-// --- Load System Config --- (無變更)
+// --- Load System Config ---
 CRM_APP.loadSystemConfig = async function() {
     try {
         const configData = await authedFetch('/api/config');
@@ -311,7 +302,7 @@ CRM_APP.loadSystemConfig = async function() {
     }
 };
 
-// --- Sidebar Setup --- (無變更)
+// --- Sidebar Setup ---
 CRM_APP.setupSidebar = function() {
     const pinToggleBtn = document.getElementById('sidebar-pin-toggle');
     if (!pinToggleBtn) {
@@ -336,7 +327,7 @@ CRM_APP.setupSidebar = function() {
     console.log(`✅ [Sidebar] 側邊欄功能初始化完成 (初始狀態 Pinned: ${this.isSidebarPinned})。`);
 };
 
-// --- Update Sidebar State (UI) --- (無變更)
+// --- Update Sidebar State (UI) ---
 CRM_APP.updateSidebarState = function() {
     const appLayout = document.querySelector('.app-layout');
     const pinToggleBtn = document.getElementById('sidebar-pin-toggle');
@@ -348,7 +339,7 @@ CRM_APP.updateSidebarState = function() {
     const pinIconContainer = pinToggleBtn.querySelector('.nav-icon');
     const navLinks = document.querySelectorAll('.sidebar .nav-list .nav-link');
 
-    const createIcon = (points) => { /* ... (SVG creation logic remains) ... */
+    const createIcon = (points) => {
         const svgNS = "http://www.w3.org/2000/svg";
         const svg = document.createElementNS(svgNS, "svg");
         svg.setAttribute("xmlns", svgNS);
@@ -388,7 +379,7 @@ CRM_APP.updateSidebarState = function() {
 };
 
 
-// --- Setup Navigation (Hash Change & Clicks) --- (無變更)
+// --- Setup Navigation (Hash Change & Clicks) ---
 CRM_APP.setupNavigation = function() {
     window.addEventListener('hashchange', () => {
         const hash = window.location.hash.substring(1);
@@ -455,8 +446,8 @@ CRM_APP.setupNavigation = function() {
     if (mobileNavBackdrop) mobileNavBackdrop.addEventListener('click', () => this.toggleMobileNav(false));
 };
 
-// --- Toggle Mobile Navigation --- (無變更)
-CRM_APP.toggleMobileNav = function(forceOpen) { /* ... (Logic remains the same) ... */
+// --- Toggle Mobile Navigation ---
+CRM_APP.toggleMobileNav = function(forceOpen) {
     const sidebar = document.querySelector('.sidebar');
     const backdrop = document.querySelector('.mobile-nav-backdrop');
     const body = document.body;
@@ -494,8 +485,8 @@ CRM_APP.navigateTo = async function(pageName, params = {}, updateHistory = true)
     const isDetailPage = pageName.includes('-details');
     const requiresParamLoad = isDetailPage || pageName === 'weekly-detail';
 
-    // --- Update Browser History --- (無變更)
-    if (updateHistory) { /* ... (Logic remains the same) ... */
+    // --- Update Browser History ---
+    if (updateHistory) {
         let newHash = `#${pageName}`;
         const encodedParams = new URLSearchParams();
         let hasParams = false;
@@ -517,8 +508,8 @@ CRM_APP.navigateTo = async function(pageName, params = {}, updateHistory = true)
         }
     }
 
-    // --- Update Header Title/Subtitle and Sidebar Active State --- (無變更)
-    if (!requiresParamLoad) { /* ... (Logic remains the same) ... */
+    // --- Update Header Title/Subtitle and Sidebar Active State ---
+    if (!requiresParamLoad) {
         const pageTitleEl = document.getElementById('page-title');
         const pageSubtitleEl = document.getElementById('page-subtitle');
         if (pageTitleEl) pageTitleEl.textContent = config.title;
@@ -527,7 +518,7 @@ CRM_APP.navigateTo = async function(pageName, params = {}, updateHistory = true)
         document.querySelectorAll('.nav-list .nav-item').forEach(item => item.classList.remove('active'));
         const activeNavItem = document.querySelector(`.nav-link[data-page="${pageName}"]`);
         if (activeNavItem) activeNavItem.closest('.nav-item')?.classList.add('active');
-    } else { /* ... (Logic remains the same) ... */
+    } else {
          let listPageAttr = 'dashboard';
          if (pageName === 'opportunity-details') listPageAttr = 'opportunities';
          if (pageName === 'company-details') listPageAttr = 'companies';
@@ -537,7 +528,7 @@ CRM_APP.navigateTo = async function(pageName, params = {}, updateHistory = true)
           if (activeNavItem) activeNavItem.closest('.nav-item')?.classList.add('active');
     }
 
-    // --- Show/Hide Page Views --- (無變更)
+    // --- Show/Hide Page Views ---
     const targetPageView = document.getElementById(`page-${pageName}`) || (pageName === 'weekly-detail' ? document.getElementById('page-weekly-business') : null);
 
     document.querySelectorAll('.page-view').forEach(page => {
@@ -547,7 +538,7 @@ CRM_APP.navigateTo = async function(pageName, params = {}, updateHistory = true)
     if (targetPageView) {
          targetPageView.style.display = 'block';
          console.log(`[Main] Displaying page view in: #${targetPageView.id}`);
-    } else { /* ... (Error handling remains the same) ... */
+    } else {
         console.error(`[Main] NavigateTo: 找不到頁面視圖元素: #page-${pageName}. Falling back to dashboard.`);
         const dashboardView = document.getElementById('page-dashboard');
         if (dashboardView) dashboardView.style.display = 'block';
@@ -570,8 +561,6 @@ CRM_APP.navigateTo = async function(pageName, params = {}, updateHistory = true)
         if (window.dashboardManager && typeof window.dashboardManager.refresh === 'function') {
             try {
                 await window.dashboardManager.refresh(); // Always refresh dashboard
-                // 儀表板的 loaded 狀態在這裡不重要，每次都刷新
-                // config.loaded = true; // Or keep false
                 console.log(`[Main] Dashboard refresh completed successfully.`);
             } catch (loadError) {
                  console.error(`[Main] 載入頁面 ${pageName} (Dashboard) 失敗:`, loadError);
@@ -624,15 +613,30 @@ CRM_APP.navigateTo = async function(pageName, params = {}, updateHistory = true)
         } else if (!loadFn) {
             console.warn(`[Main] 頁面 ${pageName} 沒有註冊的載入函式。只切換顯示。`);
         } else {
-            console.log(`[Main] 頁面 ${pageName} 已載入過，直接顯示。`);
+            console.log(`[Main] 頁面 ${pageName} 已載入過，執行樣式修復並直接顯示。`);
+            
+            // --- 【全局修復：SPA 樣式覆蓋 Bug】 ---
+            // 當頁面已載入過而直接顯示時，嘗試執行該模組的樣式注入函式，
+            // 確保該頁面的 CSS 優先權（層疊順序）位於最後。
+            try {
+                // 根據 pageName 慣例轉換為組件物件名稱 (例如: sales-analysis -> SalesAnalysisComponents)
+                const componentObjName = pageName.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('') + 'Components';
+                if (window[componentObjName] && typeof window[componentObjName].injectStyles === 'function') {
+                    console.log(`[Main] 自動修復樣式：執行 ${componentObjName}.injectStyles()`);
+                    window[componentObjName].injectStyles();
+                }
+            } catch (styleError) {
+                console.warn(`[Main] 嘗試修復頁面 ${pageName} 樣式時失敗:`, styleError);
+            }
+            // --- 【修復結束】 ---
         }
     }
     // --- Module Loading End ---
 };
 
 
-// --- Display Current User --- (無變更)
-CRM_APP.displayCurrentUser = function() { /* ... (Logic remains the same) ... */
+// --- Display Current User ---
+CRM_APP.displayCurrentUser = function() {
     const userDisplay = document.getElementById('user-display-name');
     if (!userDisplay) {
          console.warn('[Main] Cannot display user: #user-display-name element not found.');
@@ -649,13 +653,13 @@ CRM_APP.displayCurrentUser = function() { /* ... (Logic remains the same) ... */
      console.log(`[Main] Current user set to: ${this.currentUser}`);
 };
 
-// --- Get Current User (Global Helper) --- (無變更)
-function getCurrentUser() { /* ... (Logic remains the same) ... */
+// --- Get Current User (Global Helper) ---
+function getCurrentUser() {
     return window.CRM_APP?.currentUser || localStorage.getItem('crmCurrentUserName') || '系統';
 }
 
-// --- Logout Function --- (無變更)
-function logout() { /* ... (Logic remains the same) ... */
+// --- Logout Function ---
+function logout() {
     console.log('[Auth] Logging out...');
     localStorage.removeItem('crm-token');
     localStorage.removeItem('crmCurrentUserName');
@@ -665,22 +669,21 @@ function logout() { /* ... (Logic remains the same) ... */
     setTimeout(() => { window.location.href = '/'; }, 1000);
 }
 
-// --- Load HTML Components (Modals, Templates) --- (修改處)
+// --- Load HTML Components (Modals, Templates) ---
 async function loadHTMLComponents() { 
     console.log('[Main] Loading HTML components...');
     
-    // 【修改】路徑修正：加上 /components/modals/ 或 /views/
     const modalComponents = [
         '/components/modals/contact-modals', 
         '/components/modals/opportunity-modals', 
         '/components/modals/meeting-modals', 
         '/components/modals/system-modals', 
         '/components/modals/event-log-modal', 
-        '/views/event-log-list',          // 原 event-log-views.html
+        '/views/event-log-list',          
         '/components/modals/link-contact-modal', 
         '/components/modals/link-opportunity-modal', 
         '/components/modals/announcement-modals',
-        '/views/event-editor'             // 原 event-editor-standalone.html
+        '/views/event-editor'             
     ];
     
     const formTemplates = ['general', 'iot', 'dt', 'dx']; 
@@ -688,7 +691,7 @@ async function loadHTMLComponents() {
     try {
         // Load Modals
         const modalPromises = modalComponents.map(c =>
-            fetch(`${c}.html`) // 會自動補上 .html，成為完整絕對路徑
+            fetch(`${c}.html`) 
                 .then(res => res.ok ? res.text() : Promise.reject(`Failed to fetch modal ${c}.html: ${res.statusText}`))
         );
         const modalHtmls = await Promise.all(modalPromises);
@@ -703,7 +706,6 @@ async function loadHTMLComponents() {
         // Load Event Form Templates
         console.log('⚡️ [Main] Pre-loading event form templates...');
         const templatePromises = formTemplates.map(type => {
-            // 【修改】路徑修正：加上 /components/forms/
             const templateFileName = `/components/forms/event-form-${type === 'dx' ? 'general' : type}.html`;
             return fetch(templateFileName)
                 .then(res => res.ok ? res.text() : Promise.reject(`Failed to fetch template ${templateFileName}: ${res.statusText}`))
@@ -712,7 +714,7 @@ async function loadHTMLComponents() {
         );
         const loadedTemplates = await Promise.all(templatePromises);
         loadedTemplates.forEach(({ type, html }) => {
-            window.CRM_APP.formTemplates[type] = html;
+            window.CRM_APP.formTemplates[type] = html; //
         });
         console.log(`✅ [Main] ${formTemplates.length} event form templates cached.`);
 
@@ -724,8 +726,8 @@ async function loadHTMLComponents() {
 }
 
 
-// --- Update All Dropdowns based on System Config --- (無變更)
-CRM_APP.updateAllDropdowns = function() { /* ... (Logic remains the same) ... */
+// --- Update All Dropdowns based on System Config ---
+CRM_APP.updateAllDropdowns = function() {
     console.log('[Main] Updating all dropdowns...');
     const dropdownMappings = {
         'opportunity-type': '機會種類', 'upgrade-opportunity-type': '機會種類',
@@ -737,7 +739,6 @@ CRM_APP.updateAllDropdowns = function() { /* ... (Logic remains the same) ... */
         'edit-opportunity-source': '機會來源',
         'edit-current-stage': '機會階段',
         'edit-assignee': '團隊成員'
-        // Add other mappings as needed
     };
     const systemConfig = this.systemConfig;
     if (!systemConfig || Object.keys(systemConfig).length === 0) {
@@ -770,7 +771,7 @@ CRM_APP.updateAllDropdowns = function() { /* ... (Logic remains the same) ... */
      console.log('[Main] Dropdown update process completed.');
 };
 
-// --- Initialize App on DOMContentLoaded --- (無變更)
+// --- Initialize App on DOMContentLoaded ---
 document.addEventListener('DOMContentLoaded', async () => {
     if (!window.CRM_APP_INITIALIZED) {
         window.CRM_APP_INITIALIZED = true;
@@ -794,7 +795,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.CRM_APP.pageModules['sales-analysis'] = loadSalesAnalysisPage;
              console.log('[Main] Sales Analysis module registered.');
         } else {
-            console.error('錯誤：找不到 loadSalesAnalysisPage 函式，成交分析頁面可能無法載入。');
+            console.error('錯誤：找不到 loadSalesAnalysisPage 函式，成交 analysis 頁面可能無法載入。');
         }
     }
 });

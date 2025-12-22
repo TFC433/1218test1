@@ -10,23 +10,33 @@ const SalesAnalysisComponents = {
 
     injectStyles: function() {
         const styleId = 'sales-analysis-custom-style';
-        if (document.getElementById(styleId)) return;
-        const style = document.createElement('style');
+        let style = document.getElementById(styleId);
+        
+        if (style) {
+            // [修正] 如果樣式已存在，將其移到 head 最末端以確保在 SPA 切換時的優先權
+            document.head.appendChild(style);
+            return;
+        }
+
+        style = document.createElement('style');
         style.id = styleId;
+        // [修正] 增加 #page-sales-analysis 前綴提升權重，防止被其他頁面的 .stat-card 樣式覆蓋
         style.innerHTML = `
-            .stat-card.solid-fill { border-left: none !important; color: white !important; transition: transform 0.2s ease; }
-            .stat-card.solid-fill:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.15); }
-            .stat-card.solid-fill.solid-green:hover { background-color: #10b981 !important; }
-            .stat-card.solid-fill.solid-teal:hover { background-color: #0d9488 !important; }
-            .stat-card.solid-fill.solid-blue:hover { background-color: #3b82f6 !important; }
-            .stat-card.solid-fill.solid-purple:hover { background-color: #8b5cf6 !important; }
-            .stat-card.solid-fill .stat-label, .stat-card.solid-fill .stat-number, .stat-card.solid-fill .stat-icon { color: white !important; }
-            .stat-card.solid-fill .stat-icon { background: rgba(255, 255, 255, 0.2) !important; }
-            .solid-green { background-color: #10b981; }
-            .solid-teal { background-color: #0d9488; }
-            .solid-blue { background-color: #3b82f6; }
-            .solid-purple { background-color: #8b5cf6; }
-            .stat-card.orange { border-left-color: #f97316; }
+            #page-sales-analysis .stat-card.solid-fill { border-left: none !important; color: white !important; transition: transform 0.2s ease; }
+            #page-sales-analysis .stat-card.solid-fill:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.15); }
+            #page-sales-analysis .stat-card.solid-fill.solid-green:hover { background-color: #10b981 !important; }
+            #page-sales-analysis .stat-card.solid-fill.solid-teal:hover { background-color: #0d9488 !important; }
+            #page-sales-analysis .stat-card.solid-fill.solid-blue:hover { background-color: #3b82f6 !important; }
+            #page-sales-analysis .stat-card.solid-fill.solid-purple:hover { background-color: #8b5cf6 !important; }
+            #page-sales-analysis .stat-card.solid-fill .stat-label, 
+            #page-sales-analysis .stat-card.solid-fill .stat-number, 
+            #page-sales-analysis .stat-card.solid-fill .stat-icon { color: white !important; }
+            #page-sales-analysis .stat-card.solid-fill .stat-icon { background: rgba(255, 255, 255, 0.2) !important; }
+            #page-sales-analysis .solid-green { background-color: #10b981 !important; }
+            #page-sales-analysis .solid-teal { background-color: #0d9488 !important; }
+            #page-sales-analysis .solid-blue { background-color: #3b82f6 !important; }
+            #page-sales-analysis .solid-purple { background-color: #8b5cf6 !important; }
+            #page-sales-analysis .stat-card.orange { border-left-color: #f97316; }
             .sales-chip { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.85rem; color: white; white-space: nowrap; }
             .type-chip { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 0.85rem; color: white; white-space: nowrap; }
             .channel-chip { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; border: 1px solid #e5e7eb; background-color: #f9fafb; color: #374151; }
