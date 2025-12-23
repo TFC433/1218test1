@@ -17,9 +17,14 @@ class EventLogService {
     /**
      * 建立一筆事件紀錄，並自動產生對應的互動紀錄
      * @param {object} eventData 
+     * @param {string} creator - 【新增】強制指定的操作者名稱
      * @returns {Promise<object>}
      */
-    async createEventLog(eventData) {
+    async createEventLog(eventData, creator) {
+        // 【修正】確保建立者是當前登入的使用者，若無則 fallback 到原本的欄位或 '系統'
+        const currentOperator = creator || eventData.creator || '系統';
+        eventData.creator = currentOperator;
+        
         // 新增時，版次預設為 1
         eventData.editCount = 1;
 
@@ -30,7 +35,7 @@ class EventLogService {
 
         // 建立事件成功後，自動產生一筆對應的互動紀錄
         try {
-            console.log('📝 [EventLogService] 自動建立關聯的互動紀錄 (Initial)...');
+            console.log(`📝 [EventLogService] 自動建立關聯的互動紀錄 (操作者: ${currentOperator})...`);
             const interactionData = {
                 opportunityId: eventData.opportunityId,
                 companyId: eventData.companyId,
@@ -39,7 +44,7 @@ class EventLogService {
                 eventTitle: eventData.eventName || '建立事件紀錄報告',
                 // 建立時的文字維持原樣，或您也可以統一風格
                 contentSummary: `已建立事件報告: "${eventData.eventName}". [點此查看報告](event_log_id=${result.eventId})`,
-                recorder: eventData.creator,
+                recorder: currentOperator, // 【修正】使用正確的操作者
                 participants: `${eventData.ourParticipants || ''} (我方), ${eventData.clientParticipants || ''} (客戶方)`
             };
             await this.interactionWriter.createInteraction(interactionData);

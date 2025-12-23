@@ -14,7 +14,8 @@ const getServices = (req) => req.app.get('services');
 exports.createEventLog = async (req, res) => {
     try {
         const { eventLogService } = getServices(req);
-        res.json(await eventLogService.createEventLog(req.body));
+        // 【修正】將 req.user.name (操作者) 傳入 Service，確保建立者正確
+        res.json(await eventLogService.createEventLog(req.body, req.user.name));
     } catch (error) { handleApiError(res, error, 'Create Event Log'); }
 };
 
