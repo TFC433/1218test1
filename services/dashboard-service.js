@@ -1,4 +1,4 @@
-// services/dashboard-service.js (已修正儀表板週間業務資料獲取)
+// services/dashboard-service.js
 
 /**
  * 專門負責處理所有儀表板資料組合的業務邏輯
@@ -37,7 +37,6 @@ class DashboardService {
             eventLogs,
             systemConfig,
             companies
-            // 移除 weeklyBusinessReader.getAllWeeklyBusiness 的呼叫
         ] = await Promise.all([
             this.opportunityReader.getOpportunities(),
             this.contactReader.getContacts(),
@@ -45,7 +44,6 @@ class DashboardService {
             this.calendarService.getThisWeekEvents(),
             this.eventLogReader.getEventLogs(),
             this.systemReader.getSystemConfig(),
-            // this.weeklyBusinessReader.getAllWeeklyBusiness('', 1, true), // <-- 移除此行
             this.companyReader.getCompanyList()
         ]);
 
@@ -53,6 +51,7 @@ class DashboardService {
         const thisWeekDetails = await this.weeklyBusinessService.getWeeklyDetails(thisWeekId);
         const thisWeeksEntries = thisWeekDetails.entries || []; // 從詳細資料中獲取 entries
 
+        // 1. 計算機會最後活動時間 (用於排序)
         const latestInteractionMap = new Map();
         interactions.forEach(interaction => {
             const existingTimestamp = latestInteractionMap.get(interaction.opportunityId) || 0;
@@ -70,26 +69,127 @@ class DashboardService {
 
         const opportunities = opportunitiesRaw.sort((a, b) => b.effectiveLastActivity - a.effectiveLastActivity);
 
-        // const today = new Date(); // 移到前面了
         const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
         const contactsCountMonth = contacts.filter(c => new Date(c.createdTime) >= startOfMonth).length;
+        // 機會案件本月新增 (Based on Created Time)
         const opportunitiesCountMonth = opportunities.filter(o => new Date(o.createdTime) >= startOfMonth).length;
         const eventLogsCountMonth = eventLogs.filter(e => new Date(e.createdTime) >= startOfMonth).length;
 
+        // =================================================================
+        // 【新增 KPI 邏輯】成交案件、MTU/SI 拜訪統計 (修正版)
+        // =================================================================
+        
+        // 1. 成交案件統計
+        const WON_STAGE = '受注'; // 假設系統的成交階段名稱
+        const wonOpportunities = opportunities.filter(o => o.currentStage === WON_STAGE);
+        const wonCount = wonOpportunities.length;
+        // 本月成交：以預計結案日 (Expected Close Date) 或最後更新日落在本月為準
+        const wonCountMonth = wonOpportunities.filter(o => {
+            const dateStr = o.expectedCloseDate || o.lastUpdateTime;
+            if(!dateStr) return false;
+            return new Date(dateStr) >= startOfMonth;
+        }).length;
+
+        // 2. 拜訪過的公司 (MTU/SI) - 以公司總表為核心的反向查找邏輯
+        
+        // A. 建立公司名稱對照表 (用於機會案件反查)
+        const normalize = (name) => (name || '').trim().toLowerCase();
+        const companyNameMap = new Map(); // Normalized Name -> Company ID
+        companies.forEach(c => {
+            if (c.companyName) {
+                companyNameMap.set(normalize(c.companyName), c.companyId);
+            }
+        });
+
+        // B. 建立「活躍公司」的時間表 (Company ID -> 最早活動時間)
+        const earliestActivityMap = new Map();
+
+        const updateActivity = (compId, timeStr) => {
+            if (!compId) return;
+            const time = new Date(timeStr).getTime();
+            if (isNaN(time)) return;
+            
+            const currentEarliest = earliestActivityMap.get(compId);
+            // 如果還沒紀錄，或是新時間比舊時間更早，就更新
+            if (!currentEarliest || time < currentEarliest) {
+                earliestActivityMap.set(compId, time);
+            }
+        };
+
+        // B-1. 掃描互動紀錄 (有互動就算活躍)
+        interactions.forEach(i => updateActivity(i.companyId, i.interactionTime || i.createdTime));
+
+        // B-2. 掃描事件報告 (有事件就算活躍)
+        eventLogs.forEach(e => updateActivity(e.companyId, e.createdTime));
+
+        // B-3. 掃描機會案件 (有開案子就算活躍)
+        opportunities.forEach(opp => {
+            // 透過客戶名稱反查公司 ID
+            const cId = companyNameMap.get(normalize(opp.customerCompany));
+            if (cId) {
+                updateActivity(cId, opp.createdTime);
+            }
+        });
+
+        // C. 遍歷公司總表進行統計 (確保 Source of Truth)
+        let mtuCount = 0;
+        let mtuNewMonth = 0;
+        let siCount = 0;
+        let siNewMonth = 0;
+
+        // 寬鬆匹配公司類型
+        const isMTU = (type) => /MTU|MTB|工具機|Machine Tool/i.test(type || '');
+        const isSI = (type) => /SI|系統整合|System Integrator/i.test(type || '');
+
+        companies.forEach(comp => {
+            // 1. 先確認類型
+            const type = comp.companyType || '';
+            const isTargetMTU = isMTU(type);
+            const isTargetSI = isSI(type);
+
+            if (isTargetMTU || isTargetSI) {
+                // 2. 再確認是否活躍 (在 active map 中有紀錄)
+                const firstTime = earliestActivityMap.get(comp.companyId);
+
+                if (firstTime) {
+                    if (isTargetMTU) {
+                        mtuCount++;
+                        if (firstTime >= startOfMonth.getTime()) mtuNewMonth++;
+                    } else if (isTargetSI) {
+                        siCount++;
+                        if (firstTime >= startOfMonth.getTime()) siNewMonth++;
+                    }
+                }
+            }
+        });
+
+        // 舊有的待追蹤邏輯保留，以供其他列表使用
         const followUps = this._getFollowUpOpportunities(opportunities, interactions);
 
         const stats = {
             contactsCount: contacts.length,
             opportunitiesCount: opportunities.length,
             eventLogsCount: eventLogs.length,
+            
+            // 新增指標
+            wonCount: wonCount,
+            wonCountMonth: wonCountMonth,
+            mtuCount: mtuCount,
+            mtuCountMonth: mtuNewMonth,
+            siCount: siCount,
+            siCountMonth: siNewMonth,
+
             todayEventsCount: calendarData.todayCount,
             weekEventsCount: calendarData.weekCount,
             followUpCount: followUps.length,
+            
             contactsCountMonth,
             opportunitiesCountMonth,
             eventLogsCountMonth,
         };
+
+        // =================================================================
 
         const kanbanData = this._prepareKanbanData(opportunities, systemConfig);
         const recentActivity = this._prepareRecentActivity(interactions, contacts, opportunities, companies, 5);
@@ -97,21 +197,6 @@ class DashboardService {
         // const thisWeekId = this.dateHelpers.getWeekId(today); // 移到前面了
         // 【修改】直接使用從 thisWeekDetails 獲取的 weekInfo (已包含假日)
         const weekInfo = thisWeekDetails; // weekInfo 現在包含 title, dateRange, days (含 holidayName)
-
-        // --- 移除重複獲取假日資訊的邏輯 ---
-        // const firstDay = new Date(weekInfo.days[0].date);
-        // const lastDay = new Date(weekInfo.days[weekInfo.days.length - 1].date);
-        // lastDay.setDate(lastDay.getDate() + 1);
-        // const holidays = await this.calendarService.getHolidaysForPeriod(firstDay, lastDay);
-        // weekInfo.days.forEach(day => {
-        //     if (holidays.has(day.date)) {
-        //         day.holidayName = holidays.get(day.date);
-        //     }
-        // });
-        // --- 移除結束 ---
-
-
-        // const thisWeeksEntries = (weeklyBusiness.data || []).filter(entry => entry.weekId === thisWeekId); // 已在前面獲取
 
         // 【修改】組合 thisWeekInfo，使用 weekInfo 中的資訊
         const thisWeekInfoForDashboard = {

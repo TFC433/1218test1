@@ -7,6 +7,7 @@
         grid-column: span 6; 
     }
     .stats-grid { 
+        /* 平板：改為 2 欄 */
         grid-template-columns: repeat(2, 1fr); 
     }
 }
@@ -35,7 +36,9 @@
         grid-column: span 12; 
     }
     .stats-grid { 
-        grid-template-columns: repeat(2, 1fr); 
+        /* 手機直向：改為 2 欄 (3x2 變成 3x2, 看起來也OK，或者改為 1 欄) */
+        /* 這裡建議手機版改為 1 欄，避免卡片太窄 */
+        grid-template-columns: 1fr; 
     }
     .main-content { 
         padding: var(--spacing-4); 
@@ -49,7 +52,6 @@
         width: auto; 
     } 
 
-    /* 手機版頁首按鈕變為Icon */
     .page-header .header-actions .action-btn {
         padding: 0;
         width: 40px;
@@ -59,7 +61,6 @@
         display: none;
     }
     
-    /* 手機版通用表格樣式 */
     .data-table thead { 
         display: none; 
     }
@@ -96,7 +97,6 @@
         flex-shrink: 0;
     }
 
-    /* 機會詳細頁面響應式修正 */
     .detail-page-tabs {
         overflow-x: auto;
         -ms-overflow-style: none;
@@ -112,45 +112,41 @@
         grid-template-columns: 1fr;
     }
 
-    /* 【最終修正】讓機會進程在手機上自動換行，而不是橫向滾動 */
     .stage-stepper-container {
-        flex-wrap: wrap; /* 允許步驟換行 */
-        justify-content: flex-start; /* 從左邊開始排列 */
-        overflow-x: visible; /* 關閉橫向滾動 */
+        flex-wrap: wrap; 
+        justify-content: flex-start;
+        overflow-x: visible;
         padding-bottom: 0;
-        gap: 10px 0; /* 增加垂直間距 */
+        gap: 10px 0;
     }
     .stage-step {
-        flex-basis: 25%; /* 每行最多顯示4個，可以根據需要調整 */
-        min-width: 80px; /* 縮小最小寬度 */
+        flex-basis: 25%;
+        min-width: 80px;
     }
     .stepper-progress-bar {
-        display: none; /* 在換行模式下隱藏進度條 */
+        display: none;
     }
 
-    /* --- 【*** 程式碼修改點：在手機版恢復單欄時間軸 ***】 --- */
     .interaction-timeline {
-        padding-left: 50px; /* 恢復左側 padding */
+        padding-left: 50px;
     }
     .interaction-timeline::before {
-        left: 18px; /* 恢復線條在左側 */
-        width: 2px; /* 維持細線條 */
+        left: 18px;
+        width: 2px;
         transform: none;
     }
     .timeline-icon {
-        left: 11px; /* 配合 2px 線寬和 14px 節點寬度 (18 - 1 - 6) */
+        left: 11px;
         transform: none;
     }
-    /* 讓所有內容卡片恢復 100% 寬度 */
     .timeline-content,
     .timeline-item-right .timeline-content,
     .timeline-item-left .timeline-content {
-        width: auto; /* 恢復自動寬度 */
+        width: auto;
         float: none;
         margin-left: 0;
         margin-right: 0;
     }
-    /* 讓所有箭頭都在左側 */
     .timeline-item-right .timeline-content::before,
     .timeline-item-left .timeline-content::before {
         left: -8px; 
@@ -165,7 +161,6 @@
         border-left: none;
         border-right: 7px solid var(--secondary-bg);
     }
-    /* --- 【*** 手機版修改結束 ***】 --- */
 }
 
 @media (max-width: 576px) {
@@ -178,7 +173,6 @@
     }
 }
 
-/* 機會階段進度卡片 (Stage Stepper) - 桌面版樣式 */
 .stage-stepper-container {
     display: flex;
     align-items: flex-start;
@@ -259,28 +253,21 @@
     font-weight: 700;
 }
 
-/* --- 【*** 程式碼修改點：交錯時間軸 ***】 --- */
-
-/* 1. 時間軸主容器：移除 padding-left 和 mask-image */
 .interaction-timeline {
     position: relative;
-    /* padding-left: 50px; */ /* <-- 已移除 */
     max-width: 100%;
     max-height: 500px;
     overflow-y: auto;
     padding-right: var(--spacing-3);
-    /* -webkit-mask-image: linear-gradient(to bottom, black 90%, transparent 100%); */ /* <-- 已移除 */
-    /* mask-image: linear-gradient(to bottom, black 90%, transparent 100%); */ /* <-- 已移除 */
 }
-/* 2. 垂直線：改為置中, 2px 寬 */
 .interaction-timeline::before {
     content: '';
     position: absolute;
-    left: 50%; /* <-- 修改 */
-    transform: translateX(-50%); /* <-- 新增 */
+    left: 50%;
+    transform: translateX(-50%);
     top: 10px;
     bottom: 10px;
-    width: 10px; /* <-- 修改 (變細) */
+    width: 10px;
     background-color: var(--border-color);
     border-radius: 2px;
     z-index: 1;
@@ -289,7 +276,6 @@
     position: relative;
     margin-bottom: var(--spacing-5);
 }
-/* 3. 新增 clearfix (因為內容卡片將使用 float) */
 .timeline-item::after {
     content: "";
     display: table;
@@ -298,23 +284,20 @@
 .timeline-item:last-child {
     margin-bottom: 0;
 }
-/* 4. 圖示 (節點)：改為置中的 14px 小圓點 (已修正 top: 13px 和 顏色) */
 .timeline-icon {
     position: absolute;
-    left: 50%; /* <-- 修改 */
-    transform: translateX(-50%); /* <-- 新增 */
-    top: 13px; /* <-- 修正為 13px */
-    width: 14px; /* <-- 修改 (變小) */
-    height: 14px; /* <-- 修改 (變小) */
+    left: 50%;
+    transform: translateX(-50%);
+    top: 13px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
-    background-color: var(--text-muted); /* <-- 【*** 程式碼修改點：提升對比度 ***】 */
+    background-color: var(--text-muted);
     border: none;
-    /* 移除 display:flex, align-items, justify-content, font-size */
     transition: all 0.2s ease;
     box-shadow: 0 0 0 4px var(--primary-bg);
     z-index: 2;
 }
-/* 5. 內容卡片：設定寬度為 50% 減去間距 */
 .timeline-content {
     position: relative;
     background-color: var(--secondary-bg);
@@ -322,11 +305,8 @@
     border-radius: var(--rounded-lg);
     box-shadow: var(--shadow-sm);
     transition: all 0.2s ease;
-    width: calc(50% - 40px); /* <-- 修改 (40px = (14px/2) + 33px 額外間距) */
+    width: calc(50% - 40px);
 }
-/* ( .timeline-content::before / ::after 規則維持不變, 
-     它們將作為 .timeline-item-right 的預設箭頭樣式 )
-*/
 .timeline-content::before {
     content: "";
     position: absolute;
@@ -352,39 +332,33 @@
     transition: border-right-color 0.2s ease;
 }
 
-/* 6. 新增 .timeline-item-right 規則 (靠右) */
 .timeline-item-right .timeline-content {
     float: right;
-    margin-left: 40px; /* 確保與中心線有間距 */
+    margin-left: 40px;
 }
-/* ( .timeline-item-right 的箭頭使用 .timeline-content 預設樣式即可 ) */
 
-/* 7. 新增 .timeline-item-left 規則 (靠左) */
 .timeline-item-left .timeline-content {
     float: left;
-    margin-right: 40px; /* 確保與中心線有間距 */
+    margin-right: 40px;
 }
-/* 8. 新增 .timeline-item-left 的箭頭樣式 (在右側, 指向右) */
 .timeline-item-left .timeline-content::before {
-    left: auto; /* 覆蓋預設 */
-    right: -8px; /* 箭頭在右側 */
-    border-right: none; /* 移除預設 */
-    border-left: 8px solid var(--border-color); /* 指向右側 */
+    left: auto;
+    right: -8px;
+    border-right: none;
+    border-left: 8px solid var(--border-color);
     transition: border-left-color 0.2s ease;
 }
 .timeline-item-left .timeline-content::after {
-    left: auto; /* 覆蓋預設 */
-    right: -7px; /* 箭頭在右側 */
-    border-right: none; /* 移除預設 */
-    border-left: 7px solid var(--secondary-bg); /* 指向右側 */
+    left: auto;
+    right: -7px;
+    border-right: none;
+    border-left: 7px solid var(--secondary-bg);
     transition: border-left-color 0.2s ease;
 }
 
-/* 9. Hover 效果 ( .timeline-item:hover 已有, 這裡補充 left 的) */
 .timeline-item:hover .timeline-icon {
-    transform: translateX(-50%) scale(1.1); /* 修正 transform */
+    transform: translateX(-50%) scale(1.1);
 }
-/* right (預設) */
 .timeline-item-right:hover .timeline-content {
     border-color: var(--accent-blue);
 }
@@ -392,9 +366,8 @@
     border-right-color: var(--accent-blue);
 }
 .timeline-item-right:hover .timeline-content::after {
-    border-right-color: var(--secondary-bg); /* 確保 after 顏色正確 */
+    border-right-color: var(--secondary-bg);
 }
-/* left (新增) */
 .timeline-item-left:hover .timeline-content {
     border-color: var(--accent-blue);
 }
@@ -402,33 +375,28 @@
     border-left-color: var(--accent-blue);
 }
 .timeline-item-left:hover .timeline-content::after {
-    border-left-color: var(--secondary-bg); /* 確保 after 顏色正確 */
+    border-left-color: var(--secondary-bg);
 }
-
 
 .timeline-item .interaction-card {
     border: none;
     box-shadow: none;
 }
-/* (後續的 card-header, body, footer, title, summary, type-icon 樣式保持不變) */
-
-/* 10. 新增：SVG 圖示在卡片標頭中的樣式 */
 .timeline-item .interaction-card-header { 
     padding: var(--spacing-3) var(--spacing-4);
-    display: flex; /* <-- 新增 */
-    align-items: center; /* <-- 新增 */
-    gap: var(--spacing-2); /* <-- 新增 */
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
 }
 .timeline-item .interaction-card-header svg {
-    width: 18px; /* <-- 新增 */
-    height: 18px; /* <-- 新增 */
-    color: var(--text-muted); /* <-- 新增 */
-    flex-shrink: 0; /* <-- 新增 */
+    width: 18px;
+    height: 18px;
+    color: var(--text-muted);
+    flex-shrink: 0;
 }
 .timeline-item .interaction-card-header .interaction-title {
-    flex-grow: 1; /* <-- 新增 */
+    flex-grow: 1;
 }
-/* --- */
 
 .timeline-item .interaction-card-body { 
     padding: 0 var(--spacing-4) var(--spacing-3); 
@@ -443,17 +411,6 @@
     font-size: var(--font-size-sm); 
 }
 
-/* 11. 節點 (Icon) 的顏色 (移除 emoji 相關屬性) */
-/* --- 【*** 程式碼修改點：移除所有顏色規則 ***】 --- */
-/*
-(原有的 [data-type="..."] .timeline-icon 規則已被刪除)
-*/
-/* --- 【*** 修改結束 ***】 --- */
-
-/* --- 【*** 時間軸修改結束 ***】 --- */
-
-
-/* 膠囊式分段按鈕頁籤 (Segmented Tabs) */
 .detail-page-tabs {
     border-bottom: none;
     margin-bottom: var(--spacing-6);

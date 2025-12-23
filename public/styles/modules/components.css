@@ -128,8 +128,10 @@
 /* 統計卡片 */
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    /* 【修改】改為 3 欄佈局 (原本是 4) */
+    grid-template-columns: repeat(3, 1fr);
     gap: var(--spacing-6);
+    /* 【關鍵】確保佔滿父容器的 12 欄 */
     grid-column: span 12;
 }
 
@@ -150,6 +152,17 @@
     box-shadow: var(--shadow-lg); 
     background: var(--card-bg); 
 }
+
+/* 新增卡片顏色樣式 (紫、青、藍綠) */
+.stat-card.purple .stat-icon { background: #8b5cf6; }
+.stat-card.purple { border-left: 4px solid #8b5cf6; } /* 視覺強化 */
+
+.stat-card.cyan .stat-icon { background: #06b6d4; }
+.stat-card.cyan { border-left: 4px solid #06b6d4; }
+
+.stat-card.teal .stat-icon { background: #14b8a6; }
+.stat-card.teal { border-left: 4px solid #14b8a6; }
+
 
 .stat-header { 
     display: flex; 
@@ -251,13 +264,11 @@
 
 /* 【新增】讓帶有品牌色的表格列顯示特殊樣式 */
 .data-table tr[style*="--card-brand-color"] {
-    /* 使用 10% 的品牌色與原背景混合，效果更細緻 */
     background: color-mix(in srgb, var(--card-brand-color, transparent) 10%, var(--secondary-bg));
     border-left: 4px solid var(--card-brand-color, var(--border-color));
     transition: background 0.2s ease;
 }
 
-/* 【新增】滑鼠移過帶有顏色的列時，讓顏色稍微加深 */
 .data-table tr[style*="--card-brand-color"]:hover {
     background: color-mix(in srgb, var(--card-brand-color, transparent) 20%, var(--secondary-bg));
 }
@@ -269,48 +280,38 @@
 /* ==================== 特殊按鈕樣式 (含動畫與亮色模式優化) ==================== */
 
 /* 1. 定義動畫 */
-
-/* 掃光動畫 (Shine) */
 @keyframes btn-shine {
     0% { left: -100%; opacity: 0; }
-    20% { left: 100%; opacity: 0.5; } /* 光束掃過 */
-    100% { left: 100%; opacity: 0; } /* 停留一段時間 */
+    20% { left: 100%; opacity: 0.5; }
+    100% { left: 100%; opacity: 0; }
 }
 
-/* 呼吸燈陰影動畫 (Pulse - 暗色模式用) */
 @keyframes btn-pulse-shadow {
     0% { box-shadow: 0 0 8px rgba(139, 92, 246, 0.3); }
     50% { box-shadow: 0 0 16px rgba(139, 92, 246, 0.6); }
     100% { box-shadow: 0 0 8px rgba(139, 92, 246, 0.3); }
 }
 
-/* 呼吸燈陰影動畫 (Pulse - 亮色模式專用，增強強度) */
 @keyframes btn-pulse-shadow-light {
     0% { box-shadow: 0 0 8px rgba(139, 92, 246, 0.4); }
-    50% { box-shadow: 0 0 18px rgba(139, 92, 246, 0.75); } /* 亮色下加強陰影濃度 */
+    50% { box-shadow: 0 0 18px rgba(139, 92, 246, 0.75); }
     100% { box-shadow: 0 0 8px rgba(139, 92, 246, 0.4); }
 }
 
-/* 2. 按鈕基本樣式 (預設為暗色模式效果) */
+/* 2. 按鈕基本樣式 */
 .action-btn.btn-gradient-highlight {
-    position: relative; /* 為偽元素定位 */
-    overflow: hidden; /* 確保光束不會超出按鈕範圍 */
-    border: 2px solid transparent !important; /* 強制覆蓋原本 secondary 的邊框 */
-    
-    /* 雙重背景實現漸層邊框：第一層是內部背景色，第二層是漸層色 */
+    position: relative;
+    overflow: hidden;
+    border: 2px solid transparent !important;
     background-image: linear-gradient(var(--secondary-bg), var(--secondary-bg)),
                       linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
     background-origin: border-box;
     background-clip: padding-box, border-box;
-    
     color: var(--text-primary);
-    font-weight: 700; /* 加粗字體 */
-    
-    /* 應用呼吸燈動畫 (暗色模式) */
+    font-weight: 700;
     animation: btn-pulse-shadow 3s infinite ease-in-out;
 }
 
-/* 使用 ::after 偽元素製作掃光效果 */
 .action-btn.btn-gradient-highlight::after {
     content: '';
     position: absolute;
@@ -318,57 +319,32 @@
     left: -100%;
     width: 50%;
     height: 100%;
-    /* 預設掃光為白色 (適合暗色模式) */
-    background: linear-gradient(
-        to right,
-        transparent 0%,
-        rgba(255, 255, 255, 0.3) 50%,
-        transparent 100%
-    );
-    transform: skewX(-25deg); /* 傾斜光束 */
-    pointer-events: none; /* 確保不影響點擊 */
-    animation: btn-shine 4s infinite linear; /* 4秒循環一次 */
+    background: linear-gradient(to right, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
+    transform: skewX(-25deg);
+    pointer-events: none;
+    animation: btn-shine 4s infinite linear;
 }
 
-/* Hover 效果 */
 .action-btn.btn-gradient-highlight:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.6); /* Hover 時增強陰影 */
+    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.6);
     background-image: linear-gradient(var(--glass-bg), var(--glass-bg)), 
                       linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-    /* Hover 時暫停呼吸燈，保持高亮 */
     animation: none;
 }
 
-/* ==================== 亮色模式特別優化 (關鍵修改) ==================== */
+/* ==================== 亮色模式特別優化 ==================== */
 [data-theme="light"] .action-btn.btn-gradient-highlight {
-    /* 1. 加深初始陰影，讓紫色光暈在白底更明顯 */
     box-shadow: 0 0 10px rgba(139, 92, 246, 0.5); 
-    
-    /* 2. 使用專屬的呼吸燈動畫 (更強烈) */
     animation: btn-pulse-shadow-light 3s infinite ease-in-out;
 }
 
 [data-theme="light"] .action-btn.btn-gradient-highlight::after {
-    /* 3. 調整掃光顏色：在亮色背景上，改用淡紫色光束，讓閃爍更明顯 */
-    background: linear-gradient(
-        to right,
-        transparent 0%,
-        rgba(139, 92, 246, 0.25) 50%,
-        transparent 100%
-    );
+    background: linear-gradient(to right, transparent 0%, rgba(139, 92, 246, 0.25) 50%, transparent 100%);
 }
 
-/* --- 【*** 新增：刷新通知按鈕的動畫 ***】 --- */
 @keyframes pulse-orange {
-    0% {
-        box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-orange) 50%, transparent);
-    }
-    70% {
-        box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent-orange) 0%, transparent);
-    }
-    100% {
-        box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-orange) 0%, transparent);
-    }
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-orange) 50%, transparent); }
+    70% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent-orange) 0%, transparent); }
+    100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-orange) 0%, transparent); }
 }
-/* --- 【*** 新增結束 ***】 --- */

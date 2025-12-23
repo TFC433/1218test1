@@ -11,19 +11,38 @@ const DashboardWidgets = {
             if (el) el.textContent = text;
         };
 
+        // 1. 潛在客戶
         updateText('contacts-count', stats.contactsCount || 0);
-        updateText('opportunities-count', stats.opportunitiesCount || 0);
-        updateText('event-logs-count', stats.eventLogsCount || 0);
-        updateText('followup-count', stats.followUpCount || 0);
-
         const contactsTrend = document.getElementById('contacts-trend');
         if (contactsTrend) contactsTrend.textContent = stats.contactsCountMonth > 0 ? `+ ${stats.contactsCountMonth} 本月` : '';
-        
+
+        // 2. 機會案件
+        updateText('opportunities-count', stats.opportunitiesCount || 0);
         const opportunitiesTrend = document.getElementById('opportunities-trend');
         if (opportunitiesTrend) opportunitiesTrend.textContent = stats.opportunitiesCountMonth > 0 ? `+ ${stats.opportunitiesCountMonth} 本月` : '';
         
+        // 3. 事件紀錄
+        updateText('event-logs-count', stats.eventLogsCount || 0);
         const eventLogsTrend = document.getElementById('event-logs-trend');
         if (eventLogsTrend) eventLogsTrend.textContent = stats.eventLogsCountMonth > 0 ? `+ ${stats.eventLogsCountMonth} 本月` : '';
+
+        // 4. 成交案件數 (New)
+        updateText('won-count', stats.wonCount || 0);
+        const wonTrend = document.getElementById('won-trend');
+        if (wonTrend) wonTrend.textContent = stats.wonCountMonth > 0 ? `+ ${stats.wonCountMonth} 本月` : '';
+
+        // 5. 拜訪公司 MTU (New)
+        updateText('mtu-count', stats.mtuCount || 0);
+        const mtuTrend = document.getElementById('mtu-trend');
+        if (mtuTrend) mtuTrend.textContent = stats.mtuCountMonth > 0 ? `+ ${stats.mtuCountMonth} 本月` : '';
+
+        // 6. 拜訪公司 SI (New)
+        updateText('si-count', stats.siCount || 0);
+        const siTrend = document.getElementById('si-trend');
+        if (siTrend) siTrend.textContent = stats.siCountMonth > 0 ? `+ ${stats.siCountMonth} 本月` : '';
+
+        // 待追蹤 (舊有邏輯，雖然移除了卡片，但若有其他地方用到可保留)
+        updateText('followup-count', stats.followUpCount || 0);
     },
 
     /**
