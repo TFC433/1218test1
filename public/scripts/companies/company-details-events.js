@@ -1,62 +1,110 @@
 // views/scripts/company-details-events.js
-// 職責：處理「公司詳細資料頁」的所有使用者互動事件
-// V-Fixed-AI: 修正 AI 生成後自動填入電話/地址/縣市，並保護分類欄位不被覆蓋
+// 職責：處理「公司詳細資料頁」的所有使用者互動事件 (Fix: 補上機會案件與聯絡人的刪除處理)
 
 let _currentCompanyInfo = null;
+let _detailsContainer = null;
 
 function initializeCompanyEventListeners(companyInfo) {
     _currentCompanyInfo = companyInfo;
     
-    // 綁定全域變數
-    window.toggleCompanyEditMode = toggleCompanyEditMode;
-    window.saveCompanyInfo = saveCompanyInfo;
-    window.confirmDeleteCompany = confirmDeleteCompany;
-    window.generateCompanyProfile = generateCompanyProfile;
-    window.showEditContactModal = showEditContactModal;
-    window.closeEditContactModal = closeEditContactModal;
+    // 尋找主容器 (假設在 layout 中有一個 ID 為 page-company-details 的容器)
+    _detailsContainer = document.getElementById('page-company-details') || document.body;
+
+    // 移除舊的監聽器 (防止重複)
+    _detailsContainer.removeEventListener('click', handleCompanyDetailsAction);
+    _detailsContainer.removeEventListener('submit', handleCompanyDetailsSubmit);
+
+    // 綁定新的監聽器
+    _detailsContainer.addEventListener('click', handleCompanyDetailsAction);
+    _detailsContainer.addEventListener('submit', handleCompanyDetailsSubmit);
+}
+
+// --- 事件委派處理器 (修正重點：補齊所有動作) ---
+
+function handleCompanyDetailsAction(e) {
+    // 尋找最近的帶有 data-action 的按鈕
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+
+    const action = btn.dataset.action;
+    const payload = btn.dataset;
+
+    switch (action) {
+        // --- 編輯與 UI ---
+        case 'edit-mode':
+            toggleCompanyEditMode(payload.enabled === 'true');
+            break;
+        case 'generate-profile':
+            generateCompanyProfile();
+            break;
+        
+        // --- 刪除操作 ---
+        case 'delete-company':
+            confirmDeleteCompany();
+            break;
+        case 'delete-opp': // 【修正】補上機會刪除
+            confirmDeleteOppInDetails(payload.rowIndex, payload.name);
+            break;
+        
+        // --- 聯絡人操作 ---
+        case 'edit-contact':
+            try {
+                const contact = JSON.parse(payload.contact);
+                showEditContactModal(contact);
+            } catch (err) { console.error('解析聯絡人資料失敗', err); }
+            break;
+        
+        // 若有導航需求
+        case 'navigate':
+             e.preventDefault();
+             if (window.CRM_APP && payload.page) {
+                 const params = payload.params ? JSON.parse(payload.params) : {};
+                 window.CRM_APP.navigateTo(payload.page, params);
+             }
+             break;
+    }
+}
+
+function handleCompanyDetailsSubmit(e) {
+    // 攔截所有表單提交
+    if (e.target.id === 'company-edit-form') {
+        saveCompanyInfo(e);
+    } else if (e.target.id === 'edit-contact-form') {
+        handleSaveContact(e);
+    }
 }
 
 // =============================================
-// 切換編輯模式 (呼叫 ui.js 的渲染函式)
+// 邏輯實作區
 // =============================================
 
+// 1. 切換編輯模式
 function toggleCompanyEditMode(isEditing, aiData = null) {
     const container = document.getElementById('company-info-card-container');
     if (!container) return;
 
-    // 準備資料：如果有 AI 資料則合併，否則使用當前資料
     let dataToRender = _currentCompanyInfo;
 
     if (aiData) {
         dataToRender = { ..._currentCompanyInfo, ...aiData };
     } else if (isEditing) {
-        // 如果只是單純切換到編輯模式，確保讀取最新狀態
         dataToRender = _currentCompanyInfo;
     }
 
-    // 重新渲染整個卡片容器
     if (typeof renderCompanyInfoCard === 'function') {
         const newHtml = renderCompanyInfoCard(dataToRender, isEditing);
-        
-        // 替換 DOM
-        const parent = container.parentElement;
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = newHtml;
         const newElement = tempDiv.firstElementChild;
-        
         container.replaceWith(newElement);
     } else {
-        console.error('找不到 renderCompanyInfoCard 函式，無法切換模式');
+        console.error('找不到 renderCompanyInfoCard 函式');
     }
 }
 
-// =============================================
-// 儲存與其他邏輯
-// =============================================
-
+// 2. 儲存公司資料
 async function saveCompanyInfo(event) {
-    if (event) event.preventDefault();
-    
+    event.preventDefault();
     const form = document.getElementById('company-edit-form');
     if (!form) return;
 
@@ -65,13 +113,11 @@ async function saveCompanyInfo(event) {
     const oldCompanyName = _currentCompanyInfo.companyName;
     const encodedOldName = encodeURIComponent(oldCompanyName);
 
-    // 簡單前端驗證
     if (!updateData.companyName || updateData.companyName.trim() === '') {
         showNotification('公司名稱為必填項目', 'warning');
         return;
     }
 
-    // 按鈕 loading 狀態
     const saveBtn = form.querySelector('.btn-save');
     const originalBtnContent = saveBtn ? saveBtn.innerHTML : '💾 儲存';
     if (saveBtn) {
@@ -88,15 +134,12 @@ async function saveCompanyInfo(event) {
 
         if (result.success) {
             showNotification('公司資料已更新', 'success');
-            
-            // 更新本地資料快取
             _currentCompanyInfo = { ..._currentCompanyInfo, ...updateData };
 
             if (updateData.companyName !== oldCompanyName) {
-                // 名稱變更 -> 導向新 URL (頁面會自動重整)
+                // 名稱變更導致 URL 改變，導航會觸發重載
                 window.location.hash = `#/companies/${encodeURIComponent(updateData.companyName)}`;
             } else {
-                // 名稱未變 -> 切換回唯讀模式 (這會觸發重新渲染)
                 toggleCompanyEditMode(false);
             }
         } else {
@@ -112,18 +155,11 @@ async function saveCompanyInfo(event) {
     }
 }
 
-/**
- * AI 生成簡介與自動填入資料
- * 修正重點：
- * 1. 抓取表單當前輸入 (保留使用者選好的分類/評級)
- * 2. 完整提取 AI 回傳的電話、地址、縣市
- * 3. 智慧合併，確保既有資料不流失
- */
+// 3. AI 生成簡介
 async function generateCompanyProfile() {
     const input = document.getElementById('company-keywords-input');
     const keywords = input ? input.value : '';
     
-    // 1. 取得當前表單已輸入的內容 (包含使用者剛選好的下拉選單)
     const form = document.getElementById('company-edit-form');
     let currentInputData = {};
     if (form) {
@@ -132,7 +168,6 @@ async function generateCompanyProfile() {
     }
 
     showLoading('AI 正在撰寫簡介並查找資料...');
-    
     try {
         const encodedCompanyName = encodeURIComponent(_currentCompanyInfo.companyName);
         const result = await authedFetch(`/api/companies/${encodedCompanyName}/generate-profile`, {
@@ -142,30 +177,14 @@ async function generateCompanyProfile() {
         });
 
         if (result.success && result.data) {
-            // 2. 準備 AI 回傳的資料更新 (只取特定欄位，避免覆蓋分類設定)
             const aiUpdates = {};
-            
-            // 簡介
             if (result.data.introduction) aiUpdates.introduction = result.data.introduction;
-            
-            // 自動填入：電話、地址、縣市 (如果 AI 有抓到的話)
             if (result.data.phone) aiUpdates.phone = result.data.phone;
             if (result.data.address) aiUpdates.address = result.data.address;
             if (result.data.county) aiUpdates.county = result.data.county;
-            
-            // 注意：這裡刻意不放入 companyType, customerStage, engagementRating
-            // 這樣就會保留 currentInputData 中的值 (使用者的選擇)
 
-            // 3. 合併資料
-            const mergedData = {
-                ..._currentCompanyInfo, // A. 備用：原始資料
-                ...currentInputData,    // B. 基礎：使用者當前畫面上的輸入 (優先權 > 原始資料)
-                ...aiUpdates            // C. 覆蓋：AI 的新發現 (優先權 > 使用者輸入，實現自動填入)
-            };
-            
-            // 4. 重新渲染編輯模式並填入資料
+            const mergedData = { ..._currentCompanyInfo, ...currentInputData, ...aiUpdates };
             toggleCompanyEditMode(true, mergedData);
-            
             showNotification('AI 簡介與聯絡資訊已生成！', 'success');
         } else {
             throw new Error(result.message || '生成失敗');
@@ -177,25 +196,10 @@ async function generateCompanyProfile() {
     }
 }
 
-function showEventLogModalByCompany() {
-    if (_currentCompanyInfo && _currentCompanyInfo.companyId) {
-        if (typeof showEventLogFormModal === 'function') {
-            showEventLogFormModal({
-                companyId: _currentCompanyInfo.companyId,
-                companyName: _currentCompanyInfo.companyName
-            });
-        } else {
-            showNotification('無法開啟事件表單 (函式未定義)', 'error');
-        }
-    } else {
-        showNotification('無法讀取公司資訊', 'warning');
-    }
-}
-
+// 4. 刪除公司
 async function confirmDeleteCompany() {
     if (!_currentCompanyInfo) return;
     const name = _currentCompanyInfo.companyName;
-    
     const message = `確定要刪除「${name}」嗎？此操作無法復原。`;
     
     const performDelete = async () => {
@@ -204,7 +208,9 @@ async function confirmDeleteCompany() {
             const result = await authedFetch(`/api/companies/${encodeURIComponent(name)}`, { method: 'DELETE' });
             if (result.success) {
                 showNotification('公司已刪除', 'success');
-                window.location.hash = '#/companies';
+                // 導回列表頁
+                if (window.CRM_APP) window.CRM_APP.navigateTo('companies');
+                else window.location.hash = '#/companies';
             } else {
                 showNotification('刪除失敗: ' + (result.error || '未知錯誤'), 'error');
             }
@@ -222,7 +228,35 @@ async function confirmDeleteCompany() {
     }
 }
 
-// 聯絡人編輯相關 (維持原樣)
+// 5. 【新增】刪除機會案件 (在詳細頁中)
+async function confirmDeleteOppInDetails(rowIndex, oppName) {
+    if (!rowIndex) return;
+    const message = `確定要刪除機會「${oppName || '(未命名)'}」嗎？`;
+
+    showConfirmDialog(message, async () => {
+        showLoading('正在刪除機會...');
+        try {
+            const result = await authedFetch(`/api/opportunities/${rowIndex}`, { method: 'DELETE' });
+            if (result.success) {
+                showNotification('刪除成功', 'success');
+                // 重新載入當前公司頁面以刷新列表
+                if (window.CRM_APP && window.CRM_APP.pageModules['company-details']) {
+                    window.CRM_APP.pageModules['company-details'](encodeURIComponent(_currentCompanyInfo.companyName));
+                } else {
+                    window.location.reload();
+                }
+            } else {
+                showNotification('刪除失敗: ' + (result.error || '未知錯誤'), 'error');
+            }
+        } catch (e) {
+            showNotification('刪除請求失敗', 'error');
+        } finally {
+            hideLoading();
+        }
+    });
+}
+
+// 6. 聯絡人編輯 Modal
 function showEditContactModal(contact) {
     const modalContainer = document.createElement('div');
     modalContainer.id = 'edit-contact-modal-container';
@@ -231,7 +265,7 @@ function showEditContactModal(contact) {
             <div class="modal-content" style="max-width: 600px;">
                 <div class="modal-header">
                     <h2 class="modal-title">編輯聯絡人: ${contact.name}</h2>
-                    <button class="close-btn" onclick="closeEditContactModal()">&times;</button>
+                    <button class="close-btn" id="btn-close-contact-modal">&times;</button>
                 </div>
                 <form id="edit-contact-form">
                     <input type="hidden" id="edit-contact-id" value="${contact.contactId}">
@@ -250,12 +284,17 @@ function showEditContactModal(contact) {
         </div>
     `;
     document.body.appendChild(modalContainer);
-    document.getElementById('edit-contact-form').addEventListener('submit', handleSaveContact);
+
+    // 綁定關閉按鈕
+    document.getElementById('btn-close-contact-modal').addEventListener('click', closeEditContactModal);
+    // 表單提交會自動冒泡到 handleCompanyDetailsSubmit
 }
+
 function closeEditContactModal() {
     const el = document.getElementById('edit-contact-modal-container');
     if (el) el.remove();
 }
+
 async function handleSaveContact(e) {
     e.preventDefault();
     const id = document.getElementById('edit-contact-id').value;
@@ -270,10 +309,9 @@ async function handleSaveContact(e) {
         await authedFetch(`/api/contacts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
         showNotification('聯絡人已更新', 'success');
         closeEditContactModal();
-        if (_currentCompanyInfo) {
-             if(window.CRM_APP && window.CRM_APP.pageModules['company-details']) {
-                 window.CRM_APP.pageModules['company-details'](encodeURIComponent(_currentCompanyInfo.companyName));
-             }
+        // 重新載入頁面
+        if(window.CRM_APP && window.CRM_APP.pageModules['company-details']) {
+             window.CRM_APP.pageModules['company-details'](encodeURIComponent(_currentCompanyInfo.companyName));
         }
     } catch(e) { 
         console.error(e); 

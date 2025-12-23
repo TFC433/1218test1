@@ -3,7 +3,7 @@
 
 const scripts = [
     "scripts/core/theme-toggle.js",
-    "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js",
+    // "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js", // 已移至 HTML head 避免阻塞
     "scripts/core/utils.js",
     "scripts/services/api.js",
     "scripts/services/ui.js",

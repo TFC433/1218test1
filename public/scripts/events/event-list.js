@@ -1,5 +1,6 @@
 // views/scripts/event-list.js
 // 職責：渲染並管理「事件紀錄」頁面的主列表 (含搜尋、篩選、統計、圖示化操作)
+// (Systematic Refactor: Event Delegation - 統一事件處理機制)
 
 // 模組內部狀態
 let _fullEventData = [];
@@ -20,9 +21,10 @@ function renderEventLogList(container, eventList) {
     // 2. 注入 CSS 樣式
     _injectEventListStyles();
 
-    // 3. 渲染介面骨架 (Header + Toolbar + ListContainer)
+    // 3. 渲染介面骨架 (包裹 root class 以便委派)
+    // 注意：每次呼叫 render 都會重建這個結構，這保證了事件監聽器的生命週期是正確的
     container.innerHTML = `
-        <div class="dashboard-widget" style="margin-top: 24px;">
+        <div class="event-list-root dashboard-widget" style="margin-top: 24px;">
             <div class="widget-header">
                 <div style="display: flex; align-items: baseline; gap: 12px;">
                     <h2 class="widget-title">事件紀錄明細</h2>
@@ -33,7 +35,7 @@ function renderEventLogList(container, eventList) {
             <div class="search-pagination" style="padding: 0 1.5rem 1rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;">
                 <input type="text" class="search-box" id="event-list-search" placeholder="搜尋事件、對象或建立者..." style="flex-grow: 1; min-width: 200px;">
                 
-                <button class="action-btn small primary" onclick="showEventLogForCreation()" style="flex-shrink: 0; display: flex; align-items: center; gap: 4px;">
+                <button class="action-btn small primary" data-action="create-event" style="flex-shrink: 0; display: flex; align-items: center; gap: 4px;">
                     <span style="font-size: 1.1em; line-height: 1;">+</span> 新增紀錄
                 </button>
 
@@ -57,24 +59,85 @@ function renderEventLogList(container, eventList) {
         </div>
     `;
 
-    // 4. 初始化篩選選項
+    // 4. 綁定事件委派 (針對剛建立的 Widget Root)
+    const widgetRoot = container.querySelector('.event-list-root');
+    if (widgetRoot) {
+        // 確保移除舊的 (雖然後面 innerHTML 覆蓋了 DOM，但好習慣)
+        widgetRoot.removeEventListener('click', handleEventListClick);
+        widgetRoot.addEventListener('click', handleEventListClick);
+    }
+
+    // 5. 初始化篩選選項
     _populateEventFilterOptions();
 
-    // 5. 綁定事件
-    document.getElementById('event-list-search').addEventListener('keyup', (e) => {
-        _eventSearchQuery = e.target.value.toLowerCase().trim();
-        _filterAndRenderEvents();
-    });
-    
-    ['type', 'time', 'creator'].forEach(key => {
-        document.getElementById(`event-filter-${key}`).addEventListener('change', (e) => {
-            _eventFilters[key] = e.target.value;
+    // 6. 綁定輸入與 Select 事件 (這些元素在上面 HTML 剛剛生成，可以直接綁定)
+    const searchInput = document.getElementById('event-list-search');
+    if (searchInput) {
+        searchInput.addEventListener('keyup', (e) => {
+            _eventSearchQuery = e.target.value.toLowerCase().trim();
             _filterAndRenderEvents();
         });
+    }
+    
+    ['type', 'time', 'creator'].forEach(key => {
+        const el = document.getElementById(`event-filter-${key}`);
+        if (el) {
+            el.addEventListener('change', (e) => {
+                _eventFilters[key] = e.target.value;
+                _filterAndRenderEvents();
+            });
+        }
     });
 
-    // 6. 初始渲染表格
+    // 7. 初始渲染表格
     _filterAndRenderEvents();
+}
+
+/**
+ * 事件處理中心
+ */
+function handleEventListClick(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+
+    const action = btn.dataset.action;
+    const payload = btn.dataset;
+
+    // 對於非導航類的按鈕，阻止預設行為
+    if (action !== 'navigate') {
+        e.preventDefault();
+    }
+
+    switch (action) {
+        case 'create-event':
+            // 呼叫全域事件建立函式 (通常在 events.js 或 event-modal-manager.js)
+            if (typeof window.showEventLogForCreation === 'function') {
+                window.showEventLogForCreation();
+            } else {
+                console.warn('showEventLogForCreation function not found');
+            }
+            break;
+
+        case 'view-report':
+            // 呼叫全域報告檢視函式
+            if (typeof window.showEventLogReport === 'function') {
+                window.showEventLogReport(payload.id);
+            } else {
+                console.warn('showEventLogReport function not found');
+            }
+            break;
+
+        case 'navigate':
+            // 處理 SPA 導航
+            if (payload.page) {
+                e.preventDefault(); // 阻止 href="#"
+                const params = payload.params ? JSON.parse(payload.params) : {};
+                if (window.CRM_APP && window.CRM_APP.navigateTo) {
+                    window.CRM_APP.navigateTo(payload.page, params);
+                }
+            }
+            break;
+    }
 }
 
 /**
@@ -121,7 +184,7 @@ function _filterAndRenderEvents() {
         return;
     }
 
-    const eventTypeConfig = new Map((window.CRM_APP?.systemConfig['事件類型'] || []).map(t => [t.value, { note: t.note, color: t.color }]));
+    const eventTypeConfig = new Map((window.CRM_APP?.systemConfig?.['事件類型'] || []).map(t => [t.value, { note: t.note, color: t.color }]));
 
     let html = `
         <table class="event-list-table">
@@ -154,15 +217,23 @@ function _filterAndRenderEvents() {
 
         if (event.opportunityId) {
             objTagHtml = `<span class="common-chip" style="background-color: #3b82f6;">機會</span>`;
+            // data-action 導航
+            const params = JSON.stringify({ opportunityId: event.opportunityId }).replace(/"/g, '&quot;');
             objNameHtml = `<a href="#" class="text-link text-truncate" title="${event.opportunityName || event.opportunityId}" 
-                            onclick="event.preventDefault(); CRM_APP.navigateTo('opportunity-details', { opportunityId: '${event.opportunityId}' })">
+                            data-action="navigate" 
+                            data-page="opportunity-details" 
+                            data-params="${params}">
                             ${event.opportunityName || '(未命名)'}
                            </a>`;
         } else if (event.companyName || event.companyId) {
             const cName = event.companyName || event.companyId;
             objTagHtml = `<span class="common-chip" style="background-color: #6b7280;">公司</span>`;
+            // data-action 導航
+            const params = JSON.stringify({ companyName: encodeURIComponent(cName) }).replace(/"/g, '&quot;');
             objNameHtml = `<a href="#" class="text-link text-truncate" title="${cName}" 
-                            onclick="event.preventDefault(); CRM_APP.navigateTo('company-details', { companyName: '${encodeURIComponent(cName)}' })">
+                            data-action="navigate" 
+                            data-page="company-details" 
+                            data-params="${params}">
                             ${cName}
                            </a>`;
         }
@@ -179,7 +250,9 @@ function _filterAndRenderEvents() {
                 <td class="col-obj-name">${objNameHtml}</td>
                 <td class="col-user" title="${event.creator}">${event.creator}</td>
                 <td class="col-actions">
-                    <button class="btn-mini-view" title="查看完整報告" onclick="showEventLogReport('${event.eventId}')">
+                    <button class="btn-mini-view" title="查看完整報告" 
+                            data-action="view-report" 
+                            data-id="${event.eventId}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                             <circle cx="12" cy="12" r="3"></circle>
@@ -201,8 +274,10 @@ function _populateEventFilterOptions() {
     const creatorSelect = document.getElementById('event-filter-creator');
     
     // 1. 類型 (從 System Config)
-    const types = window.CRM_APP?.systemConfig['事件類型'] || [];
+    const types = window.CRM_APP?.systemConfig?.['事件類型'] || [];
     if (typeSelect) {
+        // 清空並重新填充
+        typeSelect.innerHTML = '<option value="all">所有類型</option>'; 
         types.forEach(t => {
             const opt = document.createElement('option');
             opt.value = t.value;
@@ -213,6 +288,7 @@ function _populateEventFilterOptions() {
 
     // 2. 建立者 (從資料中提取唯一值)
     if (creatorSelect) {
+        creatorSelect.innerHTML = '<option value="all">所有建立者</option>';
         const creators = new Set(_fullEventData.map(e => e.creator).filter(Boolean));
         [...creators].sort().forEach(c => {
             const opt = document.createElement('option');
@@ -284,7 +360,7 @@ function _injectEventListStyles() {
         .text-link { color: var(--accent-blue); text-decoration: none; transition: color 0.2s; }
         .text-link:hover { text-decoration: underline; color: var(--primary-color); }
 
-        /* 圖示按鈕樣式 (仿照其他列表) */
+        /* 圖示按鈕樣式 */
         .btn-mini-view {
             background: none;
             border: none;
@@ -299,7 +375,7 @@ function _injectEventListStyles() {
         }
         .btn-mini-view:hover {
             color: var(--accent-blue);
-            background: #e0f2fe; /* Light Blue BG */
+            background: #e0f2fe; 
         }
     `;
     document.head.appendChild(style);

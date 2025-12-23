@@ -1,4 +1,6 @@
-// views/scripts/weekly-business.js (V7.0 - 雙日曆分流顯示)
+// views/scripts/weekly-business.js (V8.0 - Event Delegation Refactor)
+// 職責：管理週間業務的列表、詳情雙日曆顯示、編輯與互動
+// 架構升級：採用事件委派模式，徹底移除 HTML onclick 依賴
 
 let currentWeekData = null;
 let allWeeksSummary = []; 
@@ -14,7 +16,14 @@ async function loadWeeklyBusinessPage() {
 
     const container = document.getElementById('page-weekly-business');
     if (!container) return;
+
+    // 1. 初始化容器與事件監聽 (這是系統性穩定的關鍵)
+    // 我們在最外層綁定一次，之後內部的 HTML 怎麼變動都不怕
     container.innerHTML = `<div class="loading show"><div class="spinner"></div><p>載入週次列表中...</p></div>`;
+    
+    // 移除舊的監聽器 (防止重複綁定) 並綁定新的
+    container.removeEventListener('click', handleWeeklyPageClick);
+    container.addEventListener('click', handleWeeklyPageClick);
 
     try {
         const result = await authedFetch(`/api/business/weekly/summary`);
@@ -28,6 +37,43 @@ async function loadWeeklyBusinessPage() {
         }
     }
 }
+
+// --- 事件委派核心處理器 (Centralized Event Handler) ---
+
+function handleWeeklyPageClick(e) {
+    // 尋找最近的帶有 data-action 的元素
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+
+    const action = btn.dataset.action;
+    const payload = btn.dataset;
+
+    // 根據動作分派任務
+    switch (action) {
+        case 'show-add-week-modal':
+            showAddWeekModal();
+            break;
+        case 'navigate-detail':
+            CRM_APP.navigateTo('weekly-detail', { weekId: payload.weekId });
+            break;
+        case 'navigate-back':
+            CRM_APP.navigateTo('weekly-business'); // 返回總覽
+            break;
+        case 'open-editor':
+            // 解析可能的 JSON payload
+            try {
+                const dayInfo = JSON.parse(payload.dayInfo);
+                const theme = JSON.parse(payload.theme);
+                const entry = payload.entry ? JSON.parse(payload.entry) : null;
+                openWeeklyBusinessEditorPanel(dayInfo, theme, entry);
+            } catch (err) {
+                console.error('解析編輯資料失敗', err);
+            }
+            break;
+    }
+}
+
+// --- 渲染邏輯 ---
 
 function renderWeekListPage() {
     const container = document.getElementById('page-weekly-business');
@@ -44,7 +90,7 @@ function renderWeekListPage() {
                     <h2 class="widget-title">週間業務總覽</h2>
                     ${todayInfo}
                 </div>
-                <button class="action-btn primary" onclick="showAddWeekModal()">＋ 編輯/新增週次紀錄</button>
+                <button class="action-btn primary" data-action="show-add-week-modal">＋ 編輯/新增週次紀錄</button>
             </div>
             <div class="widget-content">
     `;
@@ -59,8 +105,11 @@ function renderWeekListPage() {
             const isCurrent = week.id === currentWeekId;
             const currentWeekLabel = isCurrent ? '<span class="current-week-label">(本週)</span>' : '';
 
+            // 改用 data-action
             html += `
-                <div class="week-list-item ${isCurrent ? 'current-week' : ''}" onclick="CRM_APP.navigateTo('weekly-detail', { weekId: '${week.id}' })">
+                <div class="week-list-item ${isCurrent ? 'current-week' : ''}" 
+                     data-action="navigate-detail" 
+                     data-week-id="${week.id}">
                     <div class="week-info">
                         <div class="week-title">${week.title} ${currentWeekLabel}</div>
                         <div class="week-daterange">${week.dateRange}</div>
@@ -76,27 +125,16 @@ function renderWeekListPage() {
     html += '</div></div>';
     container.innerHTML = html;
 
-    if (!document.getElementById('weekly-business-styles')) {
-        const style = document.createElement('style');
-        style.id = 'weekly-business-styles';
-        style.innerHTML = `
-            .current-date-info { color: var(--text-primary); margin-top: 5px; font-size: 1.1rem; font-weight: 600; }
-            .week-list-item { display: flex; align-items: center; padding: 1.25rem 1rem; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background-color 0.2s ease; border-left: 4px solid transparent; }
-            .week-list-item:hover { background-color: var(--glass-bg); }
-            .week-list-item.current-week { border-left-color: var(--accent-green); background-color: rgba(34, 197, 94, 0.05); }
-            .week-info { flex: 1; }
-            .week-title { font-weight: 600; }
-            .current-week-label { color: var(--accent-green); font-size: 0.85em; font-weight: 700; margin-left: 8px; }
-            .week-daterange { color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; }
-            .week-entry-count { font-size: 0.9rem; background: var(--primary-bg); padding: 4px 10px; border-radius: 1rem; }
-            .week-arrow { font-size: 1.5rem; color: var(--text-muted); margin-left: 1rem; }
-        `;
-        document.head.appendChild(style);
-    }
+    _injectWeeklyStyles();
 }
 
 async function navigateToWeeklyDetail(weekId) {
     const container = document.getElementById('page-weekly-business');
+    
+    // 確保監聽器存在 (因為 navigateTo 可能直接被呼叫)
+    container.removeEventListener('click', handleWeeklyPageClick);
+    container.addEventListener('click', handleWeeklyPageClick);
+
     container.innerHTML = `<div class="loading show"><div class="spinner"></div><p>正在載入 ${weekId} 的週報詳情中...</p></div>`;
 
     try {
@@ -105,9 +143,9 @@ async function navigateToWeeklyDetail(weekId) {
 
         currentWeekData = result.data;
         
-        const weekTitle = `${currentWeekData.title} ${currentWeekData.dateRange}`;
-        document.getElementById('page-title').textContent = '週間業務詳情';
-        document.getElementById('page-subtitle').textContent = weekTitle;
+        // 更新標題 (若有 Breadcrumbs 或 Header)
+        const pageTitle = document.getElementById('page-title');
+        if (pageTitle) pageTitle.textContent = '週間業務詳情';
 
         renderWeeklyDetailView();
     } catch (error) {
@@ -136,9 +174,9 @@ function renderWeeklyDetailView() {
 
     const prevWeekId = getAdjacentWeekId(currentWeekData.id, -1);
     const nextWeekId = getAdjacentWeekId(currentWeekData.id, 1);
-
     const todayString = new Date().toISOString().split('T')[0];
 
+    // 使用 data-action 進行導航
     let html = `
         <div class="dashboard-widget">
             <div class="widget-header">
@@ -147,23 +185,21 @@ function renderWeeklyDetailView() {
                     <p style="color: var(--text-secondary); margin-top: 5px; font-size: 1.2rem; font-weight: 600;">${currentWeekData.title} ${currentWeekData.dateRange}</p>
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    <button class="action-btn secondary" onclick="CRM_APP.navigateTo('weekly-detail', { weekId: '${prevWeekId}' })">< 上一週</button>
-                    <button class="action-btn secondary" onclick="CRM_APP.navigateTo('weekly-business')">返回總覽</button>
-                    <button class="action-btn secondary" onclick="CRM_APP.navigateTo('weekly-detail', { weekId: '${nextWeekId}' })">下一週 ></button>
+                    <button class="action-btn secondary" data-action="navigate-detail" data-week-id="${prevWeekId}">< 上一週</button>
+                    <button class="action-btn secondary" data-action="navigate-back">返回總覽</button>
+                    <button class="action-btn secondary" data-action="navigate-detail" data-week-id="${nextWeekId}">下一週 ></button>
                 </div>
             </div>
             <div class="widget-content">
                 ${newWeekNotice}
                 <div class="weekly-detail-grid">
                     <div class="grid-header"></div>
-                    
                     ${themes.map(theme => `<div class="grid-header ${theme.value.toLowerCase()}">${theme.note}</div>`).join('')}
 
                     ${currentWeekData.days.map(dayInfo => {
                         const isHoliday = !!dayInfo.holidayName;
                         const holidayClass = isHoliday ? 'is-holiday' : '';
                         const holidayNameHtml = isHoliday ? `<span class="holiday-name">${dayInfo.holidayName}</span>` : '';
-
                         const isToday = dayInfo.date === todayString;
                         const todayClass = isToday ? 'is-today' : '';
                         const todayIndicator = isToday ? '<span class="today-indicator">今天</span>' : '';
@@ -177,27 +213,18 @@ function renderWeeklyDetailView() {
                             </div>
                             
                             ${themes.map(theme => {
-                                // 【*** 關鍵修改：雙日曆渲染 ***】
+                                // 雙日曆渲染邏輯 (IoT/DT 分流)
                                 let calendarEventsHtml = '';
-                                
-                                // 左欄 (IoT)：渲染 dxCalendarEvents
-                                if (theme.value === 'IoT' && dayInfo.dxCalendarEvents && dayInfo.dxCalendarEvents.length > 0) {
-                                    calendarEventsHtml = `<div class="calendar-events-list">`;
-                                    dayInfo.dxCalendarEvents.forEach(evt => {
-                                       calendarEventsHtml += `<div class="calendar-text-item" title="DX行程">📅 ${evt.summary}</div>`;
-                                    });
-                                    calendarEventsHtml += `<div class="calendar-separator"></div></div>`;
+                                if (theme.value === 'IoT' && dayInfo.dxCalendarEvents?.length > 0) {
+                                    calendarEventsHtml = `<div class="calendar-events-list">` + 
+                                        dayInfo.dxCalendarEvents.map(evt => `<div class="calendar-text-item" title="DX行程">📅 ${evt.summary}</div>`).join('') + 
+                                        `<div class="calendar-separator"></div></div>`;
                                 }
-                                
-                                // 右欄 (DT)：渲染 atCalendarEvents
-                                if (theme.value === 'DT' && dayInfo.atCalendarEvents && dayInfo.atCalendarEvents.length > 0) {
-                                    calendarEventsHtml = `<div class="calendar-events-list">`;
-                                    dayInfo.atCalendarEvents.forEach(evt => {
-                                       calendarEventsHtml += `<div class="calendar-text-item" title="AT行程">📅 ${evt.summary}</div>`;
-                                    });
-                                    calendarEventsHtml += `<div class="calendar-separator"></div></div>`;
+                                if (theme.value === 'DT' && dayInfo.atCalendarEvents?.length > 0) {
+                                    calendarEventsHtml = `<div class="calendar-events-list">` + 
+                                        dayInfo.atCalendarEvents.map(evt => `<div class="calendar-text-item" title="AT行程">📅 ${evt.summary}</div>`).join('') + 
+                                        `<div class="calendar-separator"></div></div>`;
                                 }
-                                // 【*** 修改結束 ***】
                                 
                                 return `
                                 <div class="grid-cell ${holidayClass} ${todayClass} ${theme.value.toLowerCase()}" id="cell-${dayInfo.dayIndex}-${theme.value}">
@@ -212,12 +239,320 @@ function renderWeeklyDetailView() {
         </div>
     `;
     container.innerHTML = html;
+    _injectDetailStyles();
+}
 
+function renderCellContent(entries, dayInfo, theme) {
+    // 序列化物件以便放入 data-payload
+    const dayInfoStr = JSON.stringify(dayInfo);
+    const themeStr = JSON.stringify(theme);
+
+    let contentHtml = entries.map(entry => {
+        if (!entry || !entry.recordId) return '';
+        const entryStr = JSON.stringify(entry);
+        const categoryClass = entry.category ? `category-${entry.category.toLowerCase()}` : '';
+        
+        return `
+            <div class="entry-card-read ${categoryClass}" id="entry-${entry.recordId}">
+                <button class="action-btn small warn edit-btn" 
+                        data-action="open-editor" 
+                        data-day-info='${dayInfoStr}' 
+                        data-theme='${themeStr}' 
+                        data-entry='${entryStr}'>✏️</button>
+                <div class="entry-card-topic">${entry['主題'] || '無主題'}</div>
+                <div class="entry-card-participants">👤 ${entry['參與人員'] || '無'}</div>
+                ${entry['重點摘要'] ? `<div class="entry-card-summary">${entry['重點摘要']}</div>` : ''}
+            </div>
+        `;
+    }).join('');
+    
+    // 幽靈卡片 (新增)
+    contentHtml += `
+        <div class="entry-card-ghost" 
+             data-action="open-editor" 
+             data-day-info='${dayInfoStr}' 
+             data-theme='${themeStr}'
+             title="新增紀錄">
+            <span class="ghost-plus">+</span>
+        </div>
+    `;
+    return contentHtml;
+}
+
+// --- 側邊面板處理 (Side Panel) - 這裡採用直接綁定，因為面板是動態 Append 的 ---
+
+function openWeeklyBusinessEditorPanel(dayInfo, theme, entry) {
+    const isNew = !entry;
+    const panelContainer = document.getElementById('slide-out-panel-container');
+    const backdrop = document.getElementById('panel-backdrop');
+
+    let participantsTags = '';
+    const selectedParticipants = isNew ? new Set() : new Set((entry?.['參與人員'] || '').split(',').map(p => p.trim()).filter(Boolean));
+
+    const systemConfig = window.CRM_APP ? window.CRM_APP.systemConfig : {};
+    if (systemConfig['團隊成員']) {
+        participantsTags += `<div class="participants-tags-container">`;
+        systemConfig['團隊成員'].forEach(member => {
+            const checked = selectedParticipants.has(member.note) ? 'checked' : '';
+            participantsTags += `
+                <label class="participant-tag">
+                    <input type="checkbox" name="participants" value="${member.note}" ${checked}>
+                    <span class="tag-text">${member.note}</span>
+                </label>
+            `;
+        });
+        participantsTags += `</div>`;
+    }
+
+    const panelHTML = `
+        <div class="slide-out-panel" id="weekly-business-editor-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">${isNew ? '新增' : '編輯'}紀錄</h2>
+                <button class="close-btn" id="btn-close-panel">&times;</button>
+            </div>
+            <div class="panel-content">
+                <form id="wb-panel-form">
+                    <p style="background:var(--primary-bg); padding: 8px; border-radius: 4px; margin-bottom: 1rem;">
+                        <strong>日期:</strong> ${dayInfo.date} (${theme.note})
+                    </p>
+                    <input type="hidden" name="recordId" value="${isNew ? '' : entry?.recordId}">
+                    <input type="hidden" name="rowIndex" value="${isNew ? '' : entry?.rowIndex}">
+                    <input type="hidden" name="date" value="${dayInfo.date}">
+                    <input type="hidden" name="category" value="${theme.value}">
+                    <div class="form-group">
+                        <label class="form-label">主題 *</label>
+                        <input type="text" name="topic" class="form-input" required value="${isNew ? '' : (entry?.['主題'] || '')}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">參與人員 (點擊選取)</label>
+                        ${participantsTags}
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">重點摘要</label>
+                        <textarea name="summary" class="form-textarea" rows="5">${isNew ? '' : (entry?.['重點摘要'] || '')}</textarea>
+                    </div>
+                     <div class="form-group">
+                        <label class="form-label">待辦事項</label>
+                        <textarea name="actionItems" class="form-textarea" rows="3">${isNew ? '' : (entry?.['待辦事項'] || '')}</textarea>
+                    </div>
+                    <div class="btn-group">
+                         ${!isNew && entry ? `<button type="button" class="action-btn danger" style="margin-right: auto;" id="btn-delete-entry">刪除</button>` : ''}
+                        <button type="button" class="action-btn secondary" id="btn-cancel-panel">取消</button>
+                        <button type="submit" class="submit-btn">儲存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+    panelContainer.innerHTML = panelHTML;
+
+    // 【重要】直接對新生成的 DOM 綁定事件，不使用 onclick
+    document.getElementById('wb-panel-form').addEventListener('submit', handleSaveWeeklyEntry);
+    document.getElementById('btn-close-panel').addEventListener('click', closeWeeklyBusinessEditorPanel);
+    document.getElementById('btn-cancel-panel').addEventListener('click', closeWeeklyBusinessEditorPanel);
+    
+    const deleteBtn = document.getElementById('btn-delete-entry');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', () => {
+            confirmDeleteWeeklyBusinessEntry(entry.recordId, entry.rowIndex, (entry['主題'] || ''));
+        });
+    }
+
+    requestAnimationFrame(() => {
+        if(backdrop) backdrop.classList.add('is-open');
+        const editorPanel = document.getElementById('weekly-business-editor-panel');
+        if(editorPanel) editorPanel.classList.add('is-open');
+    });
+     if(backdrop) backdrop.onclick = closeWeeklyBusinessEditorPanel;
+}
+
+function closeWeeklyBusinessEditorPanel() {
+    const panel = document.getElementById('weekly-business-editor-panel');
+    const backdrop = document.getElementById('panel-backdrop');
+    if (panel) panel.classList.remove('is-open');
+    if (backdrop) backdrop.classList.remove('is-open');
+}
+
+async function handleSaveWeeklyEntry(event) {
+    event.preventDefault();
+    const form = event.target;
+
+    const recordId = form.querySelector('[name="recordId"]').value;
+    const isNew = !recordId;
+
+    const selectedParticipants = Array.from(form.querySelectorAll('[name="participants"]:checked')).map(cb => cb.value);
+
+    const entryData = {
+        date: form.querySelector('[name="date"]').value,
+        category: form.querySelector('[name="category"]').value,
+        topic: form.querySelector('[name="topic"]').value,
+        participants: selectedParticipants.join(','),
+        summary: form.querySelector('[name="summary"]').value,
+        actionItems: form.querySelector('[name="actionItems"]').value,
+        rowIndex: form.querySelector('[name="rowIndex"]').value
+    };
+
+    if (!entryData.topic) {
+        showNotification('主題為必填項目', 'warning');
+        return;
+    }
+
+    showLoading('正在儲存...');
+    try {
+        const url = isNew ? '/api/business/weekly' : `/api/business/weekly/${recordId}`;
+        const method = isNew ? 'POST' : 'PUT';
+        const result = await authedFetch(url, { method, body: JSON.stringify(entryData) });
+        if (!result.success) throw new Error(result.error || '儲存失敗');
+
+        closeWeeklyBusinessEditorPanel();
+        // 重新載入當前週次 (因為是用 navigateTo 進入，所以重刷該函式)
+        navigateToWeeklyDetail(currentWeekData.id);
+    } catch (error) {
+        if (error.message !== 'Unauthorized') showNotification(`儲存失敗: ${error.message}`, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// --- 輔助函式 (Utility) ---
+
+function getWeekIdForDate(d) {
+     if (!(d instanceof Date)) {
+        try {
+            d = new Date(d);
+            if (isNaN(d.getTime())) throw new Error();
+        } catch {
+            d = new Date();
+            console.warn("Invalid date passed to getWeekIdForDate, using current date.");
+        }
+    }
+    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+};
+
+function getAdjacentWeekId(currentWeekId, direction) {
+    const [year, week] = currentWeekId.split('-W').map(Number);
+    const d = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
+    d.setUTCDate(d.getUTCDate() + (7 * direction));
+    return getWeekIdForDate(d);
+}
+
+function confirmDeleteWeeklyBusinessEntry(recordId, rowIndex, topic) {
+    const message = `您確定要永久刪除這筆業務紀錄嗎？\n\n主題：${topic}`;
+    showConfirmDialog(message, async () => {
+        showLoading('正在刪除...');
+        try {
+            const result = await authedFetch(`/api/business/weekly/${recordId}`, {
+                method: 'DELETE',
+                body: JSON.stringify({ rowIndex: rowIndex })
+            });
+
+            if (result.success) {
+                closeWeeklyBusinessEditorPanel();
+                navigateToWeeklyDetail(currentWeekData.id);
+            } else {
+                throw new Error(result.details || '刪除失敗');
+            }
+        } catch (error) {
+            if (error.message !== 'Unauthorized') showNotification(`刪除失敗: ${error.message}`, 'error');
+        } finally {
+            hideLoading();
+        }
+    });
+}
+
+// --- Modal 處理 (Dynamic Binding) ---
+
+async function showAddWeekModal() {
+    const today = new Date();
+    const prevWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const currentWeekId = getWeekIdForDate(today);
+
+    const existingWeekIds = new Set(allWeeksSummary.map(w => w.id));
+
+    const weekOptions = [
+        { id: getWeekIdForDate(prevWeek), label: '上一週' },
+        { id: currentWeekId, label: '本週' },
+        { id: getWeekIdForDate(nextWeek), label: '下一週' }
+    ];
+
+    let optionsHtml = '';
+    weekOptions.forEach(opt => {
+        const disabled = existingWeekIds.has(opt.id);
+        const selected = opt.id === currentWeekId ? 'selected' : '';
+        optionsHtml += `<option value="${opt.id}" ${disabled ? 'disabled' : ''} ${selected}>${opt.label} ${disabled ? '(已有紀錄)' : ''}</option>`;
+    });
+
+    const modalContainer = document.getElementById('modal-container');
+    const existingModal = document.getElementById('add-week-modal');
+    if (existingModal) existingModal.remove();
+
+    const modalHtml = `
+        <div id="add-week-modal" class="modal" style="display: block;">
+            <div class="modal-content" style="max-width: 500px;">
+                <div class="modal-header">
+                    <h2 class="modal-title">選擇週次</h2>
+                    <button class="close-btn" id="btn-close-week-modal">&times;</button>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">請選擇要編輯或新增紀錄的週次：</label>
+                    <div class="select-wrapper">
+                        <select id="add-week-select" class="form-select">${optionsHtml}</select>
+                    </div>
+                </div>
+                <button class="submit-btn" id="btn-confirm-add-week">前往</button>
+            </div>
+        </div>
+    `;
+    modalContainer.insertAdjacentHTML('beforeend', modalHtml);
+
+    // 【重要】綁定 Modal 內部按鈕
+    document.getElementById('btn-close-week-modal').addEventListener('click', () => document.getElementById('add-week-modal')?.remove());
+    document.getElementById('btn-confirm-add-week').addEventListener('click', confirmAddWeek);
+}
+
+function confirmAddWeek() {
+    const select = document.getElementById('add-week-select');
+    if (!select) return;
+    const selectedWeekId = select.value;
+    if (selectedWeekId) {
+        document.getElementById('add-week-modal')?.remove();
+        CRM_APP.navigateTo('weekly-detail', { weekId: selectedWeekId });
+    }
+}
+
+// --- 樣式注入函式 ---
+
+function _injectWeeklyStyles() {
+    if (!document.getElementById('weekly-business-styles')) {
+        const style = document.createElement('style');
+        style.id = 'weekly-business-styles';
+        style.innerHTML = `
+            .current-date-info { color: var(--text-primary); margin-top: 5px; font-size: 1.1rem; font-weight: 600; }
+            .week-list-item { display: flex; align-items: center; padding: 1.25rem 1rem; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background-color 0.2s ease; border-left: 4px solid transparent; }
+            .week-list-item:hover { background-color: var(--glass-bg); }
+            .week-list-item.current-week { border-left-color: var(--accent-green); background-color: rgba(34, 197, 94, 0.05); }
+            .week-info { flex: 1; }
+            .week-title { font-weight: 600; }
+            .current-week-label { color: var(--accent-green); font-size: 0.85em; font-weight: 700; margin-left: 8px; }
+            .week-daterange { color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; }
+            .week-entry-count { font-size: 0.9rem; background: var(--primary-bg); padding: 4px 10px; border-radius: 1rem; }
+            .week-arrow { font-size: 1.5rem; color: var(--text-muted); margin-left: 1rem; }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+function _injectDetailStyles() {
     if (!document.getElementById('weekly-detail-styles')) {
         const style = document.createElement('style');
         style.id = 'weekly-detail-styles';
         style.innerHTML = `
-            .weekly-detail-grid { display: grid; grid-template-columns: 100px repeat(${themes.length}, 1fr); gap: 8px; }
+            .weekly-detail-grid { display: grid; grid-template-columns: 100px repeat(2, 1fr); gap: 8px; } /* 預設 2 個主題 */
             .grid-header, .grid-day-label { padding: 10px; font-weight: 600; text-align: center; background-color: var(--primary-bg); border-radius: 8px; line-height: 1.4; position: relative; }
             .grid-cell { background-color: var(--primary-bg); border-radius: 8px; padding: 10px; min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
             
@@ -292,274 +627,11 @@ function renderWeeklyDetailView() {
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }
 
-            .calendar-events-list {
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                margin-bottom: 8px;
-            }
-            .calendar-text-item {
-                display: block;
-                font-size: 0.85rem;
-                color: #94a3b8; /* 淺灰藍色 (Slate-400) */
-                font-weight: 700; /* 粗體 */
-                padding: 2px 4px;
-                line-height: 1.4;
-            }
-            .calendar-separator {
-                height: 1px;
-                background-color: var(--border-color);
-                margin: 6px 0;
-                opacity: 0.5;
-            }
+            .calendar-events-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+            .calendar-text-item { display: block; font-size: 0.85rem; color: #94a3b8; font-weight: 700; padding: 2px 4px; line-height: 1.4; }
+            .calendar-separator { height: 1px; background-color: var(--border-color); margin: 6px 0; opacity: 0.5; }
         `;
         document.head.appendChild(style);
-    }
-}
-
-function renderCellContent(entries, dayInfo, theme) {
-    let contentHtml = entries.map(entry => {
-        if (!entry || !entry.recordId) return '';
-        const entryJsonString = JSON.stringify(entry).replace(/'/g, "&apos;");
-        const categoryClass = entry.category ? `category-${entry.category.toLowerCase()}` : '';
-        return `
-            <div class="entry-card-read ${categoryClass}" id="entry-${entry.recordId}">
-                <button class="action-btn small warn edit-btn" onclick='openWeeklyBusinessEditorPanel(${JSON.stringify(dayInfo)}, ${JSON.stringify(theme)}, ${entryJsonString})'>✏️</button>
-                <div class="entry-card-topic">${entry['主題'] || '無主題'}</div>
-                <div class="entry-card-participants">👤 ${entry['參與人員'] || '無'}</div>
-                ${entry['重點摘要'] ? `<div class="entry-card-summary">${entry['重點摘要']}</div>` : ''}
-            </div>
-        `;
-    }).join('');
-    
-    contentHtml += `
-        <div class="entry-card-ghost" onclick='openWeeklyBusinessEditorPanel(${JSON.stringify(dayInfo)}, ${JSON.stringify(theme)}, null)' title="新增紀錄">
-            <span class="ghost-plus">+</span>
-        </div>
-    `;
-    return contentHtml;
-}
-
-function openWeeklyBusinessEditorPanel(dayInfo, theme, entry) {
-    const isNew = !entry;
-    const panelContainer = document.getElementById('slide-out-panel-container');
-    const backdrop = document.getElementById('panel-backdrop');
-
-    let participantsTags = '';
-    const selectedParticipants = isNew ? new Set() : new Set((entry?.['參與人員'] || '').split(',').map(p => p.trim()).filter(Boolean));
-
-    const systemConfig = window.CRM_APP ? window.CRM_APP.systemConfig : {};
-    if (systemConfig['團隊成員']) {
-        participantsTags += `<div class="participants-tags-container">`;
-        systemConfig['團隊成員'].forEach(member => {
-            const checked = selectedParticipants.has(member.note) ? 'checked' : '';
-            participantsTags += `
-                <label class="participant-tag">
-                    <input type="checkbox" name="participants" value="${member.note}" ${checked}>
-                    <span class="tag-text">${member.note}</span>
-                </label>
-            `;
-        });
-        participantsTags += `</div>`;
-    }
-
-    const panelHTML = `
-        <div class="slide-out-panel" id="weekly-business-editor-panel">
-            <div class="panel-header">
-                <h2 class="panel-title">${isNew ? '新增' : '編輯'}紀錄</h2>
-                <button class="close-btn" onclick="closeWeeklyBusinessEditorPanel()">&times;</button>
-            </div>
-            <div class="panel-content">
-                <form id="wb-panel-form">
-                    <p style="background:var(--primary-bg); padding: 8px; border-radius: 4px; margin-bottom: 1rem;">
-                        <strong>日期:</strong> ${dayInfo.date} (${theme.note})
-                    </p>
-                    <input type="hidden" name="recordId" value="${isNew ? '' : entry?.recordId}">
-                    <input type="hidden" name="rowIndex" value="${isNew ? '' : entry?.rowIndex}">
-                    <input type="hidden" name="date" value="${dayInfo.date}">
-                    <input type="hidden" name="category" value="${theme.value}">
-                    <div class="form-group">
-                        <label class="form-label">主題 *</label>
-                        <input type="text" name="topic" class="form-input" required value="${isNew ? '' : (entry?.['主題'] || '')}">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">參與人員 (點擊選取)</label>
-                        ${participantsTags}
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">重點摘要</label>
-                        <textarea name="summary" class="form-textarea" rows="5">${isNew ? '' : (entry?.['重點摘要'] || '')}</textarea>
-                    </div>
-                     <div class="form-group">
-                        <label class="form-label">待辦事項</label>
-                        <textarea name="actionItems" class="form-textarea" rows="3">${isNew ? '' : (entry?.['待辦事項'] || '')}</textarea>
-                    </div>
-                    <div class="btn-group">
-                         ${!isNew && entry ? `<button type="button" class="action-btn danger" style="margin-right: auto;" onclick="confirmDeleteWeeklyBusinessEntry('${entry.recordId}', '${entry.rowIndex}', '${(entry['主題'] || '').replace(/'/g, "\\'")}')">刪除</button>` : ''}
-                        <button type="button" class="action-btn secondary" onclick="closeWeeklyBusinessEditorPanel()">取消</button>
-                        <button type="submit" class="submit-btn">儲存</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    `;
-    panelContainer.innerHTML = panelHTML;
-
-    document.getElementById('wb-panel-form').addEventListener('submit', handleSaveWeeklyEntry);
-
-    requestAnimationFrame(() => {
-        if(backdrop) backdrop.classList.add('is-open');
-        const editorPanel = document.getElementById('weekly-business-editor-panel');
-        if(editorPanel) editorPanel.classList.add('is-open');
-    });
-     if(backdrop) backdrop.onclick = closeWeeklyBusinessEditorPanel;
-}
-
-function closeWeeklyBusinessEditorPanel() {
-    const panel = document.getElementById('weekly-business-editor-panel');
-    const backdrop = document.getElementById('panel-backdrop');
-    if (panel) panel.classList.remove('is-open');
-    if (backdrop) backdrop.classList.remove('is-open');
-}
-
-async function handleSaveWeeklyEntry(event) {
-    event.preventDefault();
-    const form = event.target;
-
-    const recordId = form.querySelector('[name="recordId"]').value;
-    const isNew = !recordId;
-
-    const selectedParticipants = Array.from(form.querySelectorAll('[name="participants"]:checked')).map(cb => cb.value);
-
-    const entryData = {
-        date: form.querySelector('[name="date"]').value,
-        category: form.querySelector('[name="category"]').value,
-        topic: form.querySelector('[name="topic"]').value,
-        participants: selectedParticipants.join(','),
-        summary: form.querySelector('[name="summary"]').value,
-        actionItems: form.querySelector('[name="actionItems"]').value,
-        rowIndex: form.querySelector('[name="rowIndex"]').value
-    };
-
-    if (!entryData.topic) {
-        showNotification('主題為必填項目', 'warning');
-        return;
-    }
-
-    showLoading('正在儲存...');
-    try {
-        const url = isNew ? '/api/business/weekly' : `/api/business/weekly/${recordId}`;
-        const method = isNew ? 'POST' : 'PUT';
-        const result = await authedFetch(url, { method, body: JSON.stringify(entryData) });
-        if (!result.success) throw new Error(result.error || '儲存失敗');
-
-        closeWeeklyBusinessEditorPanel();
-    } catch (error) {
-        if (error.message !== 'Unauthorized') showNotification(`儲存失敗: ${error.message}`, 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-function getWeekIdForDate(d) {
-     if (!(d instanceof Date)) {
-        try {
-            d = new Date(d);
-            if (isNaN(d.getTime())) throw new Error();
-        } catch {
-            d = new Date();
-            console.warn("Invalid date passed to getWeekIdForDate, using current date.");
-        }
-    }
-    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-    return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
-};
-
-function getAdjacentWeekId(currentWeekId, direction) {
-    const [year, week] = currentWeekId.split('-W').map(Number);
-    const d = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
-    d.setUTCDate(d.getUTCDate() + (7 * direction));
-    return getWeekIdForDate(d);
-}
-
-function confirmDeleteWeeklyBusinessEntry(recordId, rowIndex, topic) {
-    const message = `您確定要永久刪除這筆業務紀錄嗎？\n\n主題：${topic}`;
-    showConfirmDialog(message, async () => {
-        showLoading('正在刪除...');
-        try {
-            const result = await authedFetch(`/api/business/weekly/${recordId}`, {
-                method: 'DELETE',
-                body: JSON.stringify({ rowIndex: rowIndex })
-            });
-
-            if (result.success) {
-                closeWeeklyBusinessEditorPanel();
-            } else {
-                throw new Error(result.details || '刪除失敗');
-            }
-        } catch (error) {
-            if (error.message !== 'Unauthorized') showNotification(`刪除失敗: ${error.message}`, 'error');
-        } finally {
-            hideLoading();
-        }
-    });
-}
-
-async function showAddWeekModal() {
-    const today = new Date();
-    const prevWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const currentWeekId = getWeekIdForDate(today);
-
-    const existingWeekIds = new Set(allWeeksSummary.map(w => w.id));
-
-    const weekOptions = [
-        { id: getWeekIdForDate(prevWeek), label: '上一週' },
-        { id: currentWeekId, label: '本週' },
-        { id: getWeekIdForDate(nextWeek), label: '下一週' }
-    ];
-
-    let optionsHtml = '';
-    weekOptions.forEach(opt => {
-        const disabled = existingWeekIds.has(opt.id);
-        const selected = opt.id === currentWeekId ? 'selected' : '';
-        optionsHtml += `<option value="${opt.id}" ${disabled ? 'disabled' : ''} ${selected}>${opt.label} ${disabled ? '(已有紀錄)' : ''}</option>`;
-    });
-
-    const modalContainer = document.getElementById('modal-container');
-    const existingModal = document.getElementById('add-week-modal');
-    if (existingModal) existingModal.remove();
-
-    const modalHtml = `
-        <div id="add-week-modal" class="modal" style="display: block;">
-            <div class="modal-content" style="max-width: 500px;">
-                <div class="modal-header">
-                    <h2 class="modal-title">選擇週次</h2>
-                    <button class="close-btn" onclick="document.getElementById('add-week-modal')?.remove()">&times;</button>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">請選擇要編輯或新增紀錄的週次：</label>
-                    <div class="select-wrapper">
-                        <select id="add-week-select" class="form-select">${optionsHtml}</select>
-                    </div>
-                </div>
-                <button class="submit-btn" onclick="confirmAddWeek()">前往</button>
-            </div>
-        </div>
-    `;
-    modalContainer.insertAdjacentHTML('beforeend', modalHtml);
-}
-
-function confirmAddWeek() {
-    const select = document.getElementById('add-week-select');
-    if (!select) return;
-    const selectedWeekId = select.value;
-    if (selectedWeekId) {
-        closeModal('add-week-modal');
-        CRM_APP.navigateTo('weekly-detail', { weekId: selectedWeekId });
     }
 }
 

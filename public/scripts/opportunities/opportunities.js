@@ -1,6 +1,6 @@
 // public/scripts/opportunities/opportunities.js
 // 職責：管理「機會案件列表頁」的圖表、篩選、列表渲染與操作
-// (V-Layout-Optimized: 篩選器右上角、搜尋欄獨立行、屏蔽晶片牆、精簡日期與欄位)
+// (V-Layout-Optimized & Event Delegation: 篩選器右上角、搜尋欄獨立行、屏蔽晶片牆、精簡日期與欄位、移除 onclick)
 
 // ==================== 全域變數 (此頁面專用) ====================
 let opportunitiesData = [];
@@ -29,7 +29,7 @@ async function loadOpportunities(query = '') {
     const container = document.getElementById('page-opportunities');
     if (!container) return;
 
-    // 渲染頁面骨架
+    // 1. 渲染頁面骨架
     container.innerHTML = `
         <div id="opportunities-dashboard-container" class="dashboard-grid-flexible" style="margin-bottom: 24px;">
             <div class="loading show" style="grid-column: span 12;"><div class="spinner"></div><p>載入分析圖表中...</p></div>
@@ -52,7 +52,7 @@ async function loadOpportunities(query = '') {
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <div id="opportunities-filter-status" style="display: none; align-items: center; gap: 8px;">
                         <span id="opportunities-filter-text" style="font-size: 0.85rem; font-weight: 600; color: var(--accent-blue);"></span>
-                        <button class="action-btn small danger" onclick="clearAllOppFilters()" style="padding: 2px 8px;">清除</button>
+                        <button class="action-btn small danger" data-action="clear-filters" style="padding: 2px 8px;">清除</button>
                     </div>
 
                     <div id="opportunity-list-filters" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -71,7 +71,7 @@ async function loadOpportunities(query = '') {
             </div>
 
             <div class="search-row" style="padding: 0 1.5rem 1.25rem;">
-                <input type="text" class="search-box" id="opportunities-list-search" placeholder="搜尋機會名稱或客戶公司..." onkeyup="handleOpportunitiesSearch(event)" value="${query}" style="width: 100%; max-width: none;">
+                <input type="text" class="search-box" id="opportunities-list-search" placeholder="搜尋機會名稱或客戶公司..." style="width: 100%; max-width: none;" value="${query}">
             </div>
 
             <div id="opportunities-page-content" class="widget-content" style="padding: 0;">
@@ -79,6 +79,17 @@ async function loadOpportunities(query = '') {
             </div>
         </div>
     `;
+
+    // 2. 綁定事件委派 (移除舊的，綁定新的)
+    container.removeEventListener('click', handleOpportunitiesClick);
+    container.addEventListener('click', handleOpportunitiesClick);
+    
+    // 綁定搜尋事件 (keyup 仍維持直接綁定)
+    const searchInput = document.getElementById('opportunities-list-search');
+    if (searchInput) {
+        searchInput.removeEventListener('keyup', handleOpportunitiesSearch);
+        searchInput.addEventListener('keyup', handleOpportunitiesSearch);
+    }
 
     try {
         const [dashboardResult, opportunitiesResult, interactionsResult, systemConfigResult] = await Promise.all([
@@ -196,6 +207,43 @@ async function loadOpportunities(query = '') {
 }
 
 /**
+ * 統一事件處理器 (Centralized Event Handler)
+ */
+function handleOpportunitiesClick(e) {
+    // 尋找最近的帶有 data-action 的元素
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    
+    const action = btn.dataset.action;
+    const payload = btn.dataset;
+
+    switch (action) {
+        case 'sort':
+            handleOppSort(payload.field);
+            break;
+        case 'delete-opp':
+            confirmDeleteOpportunity(payload.rowIndex, payload.name);
+            break;
+        case 'clear-filters':
+            clearAllOppFilters();
+            break;
+        case 'navigate':
+            e.preventDefault();
+            // 解析可能的參數
+            let params = {};
+            if (payload.params) {
+                try {
+                    params = JSON.parse(payload.params);
+                } catch (err) {
+                    console.error('解析導航參數失敗', err);
+                }
+            }
+            CRM_APP.navigateTo(payload.page, params);
+            break;
+    }
+}
+
+/**
  * 填充下拉選單選項
  */
 function populateOppFilterOptions(selectId, options, defaultText) {
@@ -229,13 +277,15 @@ function clearAllOppFilters() {
     });
 
     // 清除圖表選取狀態
-    Highcharts.charts.forEach(chart => {
-        if (chart && chart.series && chart.series[0] && chart.series[0].points) {
-             chart.series[0].points.forEach(point => {
-                 if (point && typeof point.select === 'function') point.select(false, true);
-             });
-        }
-    });
+    if (typeof Highcharts !== 'undefined') {
+        Highcharts.charts.forEach(chart => {
+            if (chart && chart.series && chart.series[0] && chart.series[0].points) {
+                 chart.series[0].points.forEach(point => {
+                     if (point && typeof point.select === 'function') point.select(false, true);
+                 });
+            }
+        });
+    }
     filterAndRenderOpportunities();
 }
 
@@ -364,7 +414,7 @@ function handleOppSort(field) {
 }
 
 /**
- * 渲染機會案件列表表格
+ * 渲染機會案件列表表格 (HTML 生成)
  */
 function renderOpportunitiesTable(opportunities) {
     const styleId = 'opportunity-list-upgraded-styles';
@@ -378,7 +428,6 @@ function renderOpportunitiesTable(opportunities) {
             .opp-list-table td { padding: 12px 16px; border-bottom: 1px solid var(--border-color); vertical-align: middle; font-size: 0.95rem; color: var(--text-main); }
             .opp-list-table tr:hover { background-color: rgba(0,0,0,0.02); }
             
-            /* 標籤感樣式對齊成交分析頁面 */
             .opp-type-chip { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 0.8rem; color: white; white-space: nowrap; font-weight: 500; }
             .opp-sales-chip { display: inline-block; padding: 3px 12px; border-radius: 12px; font-size: 0.8rem; color: white; white-space: nowrap; font-weight: 500; }
             .opp-channel-chip { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; border: 1px solid #e5e7eb; background-color: #f9fafb; color: #374151; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
@@ -403,7 +452,8 @@ function renderOpportunitiesTable(opportunities) {
     const renderSortHeader = (field, label) => {
         let icon = '↕';
         if (currentOppSort.field === field) icon = currentOppSort.direction === 'asc' ? '↑' : '↓';
-        return `<th class="sortable" onclick="handleOppSort('${field}')">${label} <span class="opp-sort-icon">${icon}</span></th>`;
+        // 使用 data-action 替代 onclick
+        return `<th class="sortable" data-action="sort" data-field="${field}">${label} <span class="opp-sort-icon">${icon}</span></th>`;
     };
 
     let html = `<div class="opp-list-container"><table class="opp-list-table"><thead><tr>
@@ -428,9 +478,12 @@ function renderOpportunitiesTable(opportunities) {
         const typeColor = typeColors.get(opp.opportunityType) || '#9ca3af';
         const modelColor = modelColors.get(opp.salesModel) || '#6b7280';
         const channelText = opp.channelDetails || opp.salesChannel || '-';
-        
-        // 僅保留日期，移除具體時間
         const lastActivityDate = opp.effectiveLastActivity ? new Date(opp.effectiveLastActivity).toLocaleDateString('zh-TW') : '-';
+
+        // 建構安全的 data params
+        const oppParams = JSON.stringify({ opportunityId: opp.opportunityId }).replace(/"/g, '&quot;');
+        const compParams = JSON.stringify({ companyName: encodeURIComponent(opp.customerCompany || '') }).replace(/"/g, '&quot;');
+        const safeOppName = (opp.opportunityName || '').replace(/"/g, '&quot;');
 
         html += `
             <tr>
@@ -438,12 +491,18 @@ function renderOpportunitiesTable(opportunities) {
                 <td style="white-space:nowrap;">${lastActivityDate}</td>
                 <td><span class="opp-type-chip" style="background:${typeColor}">${opp.opportunityType || '未分類'}</span></td>
                 <td style="min-width:180px;">
-                    <a href="#" class="text-link" onclick="event.preventDefault(); CRM_APP.navigateTo('opportunity-details', { opportunityId: '${opp.opportunityId}' })">
+                    <a href="#" class="text-link" 
+                       data-action="navigate" 
+                       data-page="opportunity-details" 
+                       data-params="${oppParams}">
                         <strong>${opp.opportunityName || '(未命名)'}</strong>
                     </a>
                 </td>
                 <td style="min-width:150px;">
-                    <a href="#" class="text-link" style="color:var(--text-secondary);" onclick="event.preventDefault(); CRM_APP.navigateTo('company-details', { companyName: '${encodeURIComponent(opp.customerCompany || '')}' })">
+                    <a href="#" class="text-link" style="color:var(--text-secondary);" 
+                       data-action="navigate" 
+                       data-page="company-details" 
+                       data-params="${compParams}">
                         ${opp.customerCompany || '-'}
                     </a>
                 </td>
@@ -451,7 +510,10 @@ function renderOpportunitiesTable(opportunities) {
                 <td><span class="opp-channel-chip" title="${channelText}">${channelText}</span></td>
                 <td><span class="opp-status-badge">${stageName}</span></td>
                 <td class="col-actions">
-                    <button class="btn-mini-delete" title="刪除案件" onclick="confirmDeleteOpportunity(${opp.rowIndex}, '${(opp.opportunityName||'').replace(/'/g, "\\'")}')">
+                    <button class="btn-mini-delete" title="刪除案件" 
+                            data-action="delete-opp" 
+                            data-row-index="${opp.rowIndex}" 
+                            data-name="${safeOppName}">
                         <svg style="width:18px;height:18px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     </button>
                 </td>
@@ -554,7 +616,13 @@ async function confirmDeleteOpportunity(rowIndex, opportunityName) {
 async function loadFollowUpPage() {
     const container = document.getElementById('page-follow-up');
     if (!container) return;
+    
     container.innerHTML = '<div class="loading show"><div class="spinner"></div><p>載入待追蹤清單中...</p></div>';
+    
+    // 同樣為追蹤頁面綁定事件委派
+    container.removeEventListener('click', handleOpportunitiesClick);
+    container.addEventListener('click', handleOpportunitiesClick);
+
     try {
         const result = await authedFetch('/api/dashboard');
         if (!result.success || !result.data) throw new Error(result.error || '無法獲取資料');
