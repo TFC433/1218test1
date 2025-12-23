@@ -14,7 +14,6 @@ class DashboardService {
         this.interactionReader = services.interactionReader;
         this.eventLogReader = services.eventLogReader;
         this.systemReader = services.systemReader;
-        // 【修改】注入 weeklyBusinessService 而不是 reader
         this.weeklyBusinessService = services.weeklyBusinessService;
         this.companyReader = services.companyReader;
         this.calendarService = services.calendarService;
@@ -24,11 +23,9 @@ class DashboardService {
     async getDashboardData() {
         console.log('📊 [DashboardService] 執行主儀表板資料整合...');
 
-        // 【修改】計算 thisWeekId 移到前面
         const today = new Date();
         const thisWeekId = this.dateHelpers.getWeekId(today);
 
-        // 【修改】將 weeklyBusiness 的 Promise.all 拆分出來，以便使用 thisWeekId
         const [
             opportunitiesRaw,
             contacts,
@@ -47,9 +44,8 @@ class DashboardService {
             this.companyReader.getCompanyList()
         ]);
 
-        // 【新增】單獨獲取當週的詳細業務資料
         const thisWeekDetails = await this.weeklyBusinessService.getWeeklyDetails(thisWeekId);
-        const thisWeeksEntries = thisWeekDetails.entries || []; // 從詳細資料中獲取 entries
+        const thisWeeksEntries = thisWeekDetails.entries || [];
 
         // 1. 計算機會最後活動時間 (用於排序)
         const latestInteractionMap = new Map();
@@ -72,99 +68,100 @@ class DashboardService {
         const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
         const contactsCountMonth = contacts.filter(c => new Date(c.createdTime) >= startOfMonth).length;
-        // 機會案件本月新增 (Based on Created Time)
         const opportunitiesCountMonth = opportunities.filter(o => new Date(o.createdTime) >= startOfMonth).length;
         const eventLogsCountMonth = eventLogs.filter(e => new Date(e.createdTime) >= startOfMonth).length;
 
         // =================================================================
-        // 【新增 KPI 邏輯】成交案件、MTU/SI 拜訪統計 (修正版)
+        // MTU/SI 活躍與家數統計邏輯 (Clean Version)
         // =================================================================
-        
-        // 1. 成交案件統計
-        const WON_STAGE = '受注'; // 假設系統的成交階段名稱
-        const wonOpportunities = opportunities.filter(o => o.currentStage === WON_STAGE);
-        const wonCount = wonOpportunities.length;
-        // 本月成交：以預計結案日 (Expected Close Date) 或最後更新日落在本月為準
-        const wonCountMonth = wonOpportunities.filter(o => {
-            const dateStr = o.expectedCloseDate || o.lastUpdateTime;
-            if(!dateStr) return false;
-            return new Date(dateStr) >= startOfMonth;
-        }).length;
 
-        // 2. 拜訪過的公司 (MTU/SI) - 以公司總表為核心的反向查找邏輯
-        
-        // A. 建立公司名稱對照表 (用於機會案件反查)
         const normalize = (name) => (name || '').trim().toLowerCase();
-        const companyNameMap = new Map(); // Normalized Name -> Company ID
+        
+        // 準備工具: Name -> ID 對照表 (用於機會反查)
+        const companyNameMap = new Map();
         companies.forEach(c => {
             if (c.companyName) {
                 companyNameMap.set(normalize(c.companyName), c.companyId);
             }
         });
 
-        // B. 建立「活躍公司」的時間表 (Company ID -> 最早活動時間)
-        const earliestActivityMap = new Map();
+        // 1. 找出所有定義上的 MTU 公司 (靜態)
+        const isStrictMTU = (type) => normalize(type) === 'mtu';
+        const isSI = (type) => /SI|系統整合|System Integrator/i.test(type || '');
+        
+        const staticMtuList = companies.filter(c => isStrictMTU(c.companyType));
 
-        const updateActivity = (compId, timeStr) => {
-            if (!compId) return;
+        // 2. 找出所有活躍公司 (動態)
+        const activeCompanyIds = new Set();
+        const earliestActivityMap = new Map(); // 紀錄最早活動時間
+
+        const recordActivity = (cId, timeStr) => {
+            if (!cId) return;
+            activeCompanyIds.add(cId);
+            
             const time = new Date(timeStr).getTime();
             if (isNaN(time)) return;
             
-            const currentEarliest = earliestActivityMap.get(compId);
-            // 如果還沒紀錄，或是新時間比舊時間更早，就更新
+            const currentEarliest = earliestActivityMap.get(cId);
             if (!currentEarliest || time < currentEarliest) {
-                earliestActivityMap.set(compId, time);
+                earliestActivityMap.set(cId, time);
             }
         };
 
-        // B-1. 掃描互動紀錄 (有互動就算活躍)
-        interactions.forEach(i => updateActivity(i.companyId, i.interactionTime || i.createdTime));
-
-        // B-2. 掃描事件報告 (有事件就算活躍)
-        eventLogs.forEach(e => updateActivity(e.companyId, e.createdTime));
-
-        // B-3. 掃描機會案件 (有開案子就算活躍)
+        // 掃描互動、事件與機會
+        interactions.forEach(i => i.companyId && recordActivity(i.companyId, i.interactionTime || i.createdTime));
+        eventLogs.forEach(e => e.companyId && recordActivity(e.companyId, e.createdTime));
         opportunities.forEach(opp => {
-            // 透過客戶名稱反查公司 ID
             const cId = companyNameMap.get(normalize(opp.customerCompany));
-            if (cId) {
-                updateActivity(cId, opp.createdTime);
-            }
+            if (cId) recordActivity(cId, opp.createdTime);
         });
 
-        // C. 遍歷公司總表進行統計 (確保 Source of Truth)
+        // 3. 交叉比對：計算活躍 MTU 與 不活躍 MTU
         let mtuCount = 0;
         let mtuNewMonth = 0;
         let siCount = 0;
         let siNewMonth = 0;
 
-        // 寬鬆匹配公司類型
-        const isMTU = (type) => /MTU|MTB|工具機|Machine Tool/i.test(type || '');
-        const isSI = (type) => /SI|系統整合|System Integrator/i.test(type || '');
+        const activeMtuNames = [];
+        const inactiveMtuNames = [];
 
-        companies.forEach(comp => {
-            // 1. 先確認類型
-            const type = comp.companyType || '';
-            const isTargetMTU = isMTU(type);
-            const isTargetSI = isSI(type);
+        // 遍歷所有符合 MTU 定義的公司
+        staticMtuList.forEach(comp => {
+            const cId = comp.companyId;
+            const name = comp.companyName;
 
-            if (isTargetMTU || isTargetSI) {
-                // 2. 再確認是否活躍 (在 active map 中有紀錄)
-                const firstTime = earliestActivityMap.get(comp.companyId);
-
-                if (firstTime) {
-                    if (isTargetMTU) {
-                        mtuCount++;
-                        if (firstTime >= startOfMonth.getTime()) mtuNewMonth++;
-                    } else if (isTargetSI) {
-                        siCount++;
-                        if (firstTime >= startOfMonth.getTime()) siNewMonth++;
-                    }
+            if (activeCompanyIds.has(cId)) {
+                mtuCount++;
+                activeMtuNames.push(name);
+                
+                const firstTime = earliestActivityMap.get(cId);
+                if (firstTime >= startOfMonth.getTime()) {
+                    mtuNewMonth++;
                 }
+            } else {
+                inactiveMtuNames.push(name);
             }
         });
 
-        // 舊有的待追蹤邏輯保留，以供其他列表使用
+        // 計算 SI
+        companies.forEach(comp => {
+             if (activeCompanyIds.has(comp.companyId) && isSI(comp.companyType)) {
+                 siCount++;
+                 const firstTime = earliestActivityMap.get(comp.companyId);
+                 if (firstTime >= startOfMonth.getTime()) siNewMonth++;
+             }
+        });
+
+        // 成交案件統計
+        const WON_STAGE = '受注';
+        const wonOpportunities = opportunities.filter(o => o.currentStage === WON_STAGE);
+        const wonCount = wonOpportunities.length;
+        const wonCountMonth = wonOpportunities.filter(o => {
+            const dateStr = o.expectedCloseDate || o.lastUpdateTime;
+            if(!dateStr) return false;
+            return new Date(dateStr) >= startOfMonth;
+        }).length;
+
         const followUps = this._getFollowUpOpportunities(opportunities, interactions);
 
         const stats = {
@@ -172,13 +169,22 @@ class DashboardService {
             opportunitiesCount: opportunities.length,
             eventLogsCount: eventLogs.length,
             
-            // 新增指標
             wonCount: wonCount,
             wonCountMonth: wonCountMonth,
+            
             mtuCount: mtuCount,
             mtuCountMonth: mtuNewMonth,
             siCount: siCount,
             siCountMonth: siNewMonth,
+
+            // 傳遞詳細資料供前端顯示 (但不印 Log)
+            mtuDetails: {
+                totalMtu: staticMtuList.length,
+                activeCount: mtuCount,
+                inactiveCount: inactiveMtuNames.length,
+                activeNames: activeMtuNames,     
+                inactiveNames: inactiveMtuNames
+            },
 
             todayEventsCount: calendarData.todayCount,
             weekEventsCount: calendarData.weekCount,
@@ -193,16 +199,13 @@ class DashboardService {
 
         const kanbanData = this._prepareKanbanData(opportunities, systemConfig);
         const recentActivity = this._prepareRecentActivity(interactions, contacts, opportunities, companies, 5);
+        
+        const weekInfo = thisWeekDetails;
 
-        // const thisWeekId = this.dateHelpers.getWeekId(today); // 移到前面了
-        // 【修改】直接使用從 thisWeekDetails 獲取的 weekInfo (已包含假日)
-        const weekInfo = thisWeekDetails; // weekInfo 現在包含 title, dateRange, days (含 holidayName)
-
-        // 【修改】組合 thisWeekInfo，使用 weekInfo 中的資訊
         const thisWeekInfoForDashboard = {
             weekId: thisWeekId,
             title: `(${weekInfo.month}第${weekInfo.weekOfMonth}週，${weekInfo.shortDateRange})`,
-            days: weekInfo.days // 傳遞包含假日資訊的 days 陣列
+            days: weekInfo.days
         };
 
         return {
@@ -211,8 +214,8 @@ class DashboardService {
             followUpList: followUps.slice(0, 5),
             todaysAgenda: calendarData.todayEvents,
             recentActivity,
-            weeklyBusiness: thisWeeksEntries, // 傳遞當週的紀錄
-            thisWeekInfo: thisWeekInfoForDashboard // 傳遞處理過的 weekInfo
+            weeklyBusiness: thisWeeksEntries,
+            thisWeekInfo: thisWeekInfoForDashboard
         };
     }
 
@@ -281,12 +284,8 @@ class DashboardService {
                 source: this._prepareCategoricalData(opportunities, 'opportunitySource', '機會來源', systemConfig),
                 type: this._prepareCategoricalData(opportunities, 'opportunityType', '機會種類', systemConfig),
                 stage: this._prepareOpportunityStageData(opportunities, systemConfig),
-                // 【新增】呼叫新的資料準備函式
                 probability: this._prepareCategoricalData(opportunities, 'orderProbability', '下單機率', systemConfig),
-                
-                // 【*** 程式碼修改點：呼叫新的 _prepareSpecificationData ***】
                 specification: this._prepareSpecificationData(opportunities, '可能下單規格', systemConfig),
-                
                 channel: this._prepareCategoricalData(opportunities, 'salesChannel', '可能銷售管道', systemConfig),
                 scale: this._prepareCategoricalData(opportunities, 'deviceScale', '設備規模', systemConfig),
             }
@@ -315,7 +314,7 @@ class DashboardService {
                 const createdDate = new Date(opp.createdTime);
                 return createdDate < sevenDaysAgo;
             }
-            const lastInteractionDate = new Date(oppInteractions.sort((a,b) => new Date(b.interactionTime || b.createdTime) - new Date(a.interactionTime || a.createdTime))[0].interactionTime || oppInteractions[0].createdTime); // Added fallback for createdTime
+            const lastInteractionDate = new Date(oppInteractions.sort((a,b) => new Date(b.interactionTime || b.createdTime) - new Date(a.interactionTime || a.createdTime))[0].interactionTime || oppInteractions[0].createdTime);
             return lastInteractionDate < sevenDaysAgo;
         });
     }
@@ -337,21 +336,17 @@ class DashboardService {
     }
 
     _prepareRecentActivity(interactions, contacts, opportunities, companies, limit) {
-        // --- 修正開始：處理無效日期 ---
         const contactFeed = contacts.map(item => {
             const ts = new Date(item.createdTime);
-            // 檢查是否為無效日期，若是則給一個 0 (或一個極舊的時間)
             return { type: 'new_contact', timestamp: isNaN(ts.getTime()) ? 0 : ts.getTime(), data: item };
         });
         const interactionFeed = interactions.map(item => {
             const ts = new Date(item.interactionTime || item.createdTime);
-            // 同樣檢查無效日期
             return { type: 'interaction', timestamp: isNaN(ts.getTime()) ? 0 : ts.getTime(), data: item };
         });
-        // --- 修正結束 ---
 
         const combinedFeed = [...interactionFeed, ...contactFeed]
-            .sort((a, b) => b.timestamp - a.timestamp) // 現在 timestamp 都是有效數字
+            .sort((a, b) => b.timestamp - a.timestamp)
             .slice(0, limit);
 
         const opportunityMap = new Map(opportunities.map(opp => [opp.opportunityId, opp.opportunityName]));
@@ -417,12 +412,10 @@ class DashboardService {
         return Object.entries(counts).sort(([a], [b]) => a.localeCompare(b));
     }
 
-    // 【重構】建立一個通用的分類資料準備函式
     _prepareCategoricalData(data, fieldKey, configKey, systemConfig) {
         const nameMap = new Map((systemConfig[configKey] || []).map(item => [item.value, item.note]));
         const counts = data.reduce((acc, item) => {
             const value = item[fieldKey];
-            // 將原始值或其對應的顯示名稱作為 key
             const key = nameMap.get(value) || value || '未分類';
             acc[key] = (acc[key] || 0) + 1;
             return acc;
@@ -430,16 +423,9 @@ class DashboardService {
         return Object.entries(counts).map(([name, y]) => ({ name, y }));
     }
 
-    /**
-     * 【*** 程式碼修改點：新增專門處理規格的函式 ***】
-     * @param {Array<object>} opportunities - 所有機會案件
-     * @param {string} configKey - 系統設定的 Key (e.g., '可能下單規格')
-     * @param {object} systemConfig - 系統設定
-     * @returns {Array<object>} - 圖表用的資料
-     */
     _prepareSpecificationData(opportunities, configKey, systemConfig) {
         const nameMap = new Map((systemConfig[configKey] || []).map(item => [item.value, item.note]));
-        const counts = {}; // 使用物件來累計
+        const counts = {};
 
         opportunities.forEach(item => {
             const value = item.potentialSpecification;
@@ -447,35 +433,27 @@ class DashboardService {
 
             let keys = [];
             
-            // 嘗試解析 JSON
             try {
                 const parsedJson = JSON.parse(value);
                 if (parsedJson && typeof parsedJson === 'object') {
-                    // 新格式：{"product_a": 5, "product_b": 1}
-                    // 我們只計算有哪些 key (有哪些產品)，而不計算總數量
                     keys = Object.keys(parsedJson).filter(k => parsedJson[k] > 0);
                 } else {
-                    // 雖然是 JSON，但不是物件 (例如 "null" 或 "true")，拋出錯誤
-                    throw new Error('Not an object, fallback to string parsing');
+                    throw new Error('Not an object');
                 }
             } catch (e) {
-                // 向下相容：解析舊版 "規格A,規格B"
                 if (typeof value === 'string') {
                     keys = value.split(',').map(s => s.trim()).filter(Boolean);
                 }
             }
             
-            // 累計
             keys.forEach(key => {
                 const displayName = nameMap.get(key) || key;
                 counts[displayName] = (counts[displayName] || 0) + 1;
             });
         });
 
-        // 轉換為圖表格式
         return Object.entries(counts).map(([name, y]) => ({ name, y }));
     }
-
 
     _prepareOpportunityStageData(opportunities, systemConfig) {
         const stageMapping = new Map((systemConfig['機會階段'] || []).map(item => [item.value, item.note]));

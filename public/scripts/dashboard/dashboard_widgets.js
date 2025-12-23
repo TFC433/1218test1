@@ -11,38 +11,93 @@ const DashboardWidgets = {
             if (el) el.textContent = text;
         };
 
-        // 1. 潛在客戶
+        // 1. 基礎數據更新
         updateText('contacts-count', stats.contactsCount || 0);
-        const contactsTrend = document.getElementById('contacts-trend');
-        if (contactsTrend) contactsTrend.textContent = stats.contactsCountMonth > 0 ? `+ ${stats.contactsCountMonth} 本月` : '';
+        this._updateTrend('contacts-trend', stats.contactsCountMonth);
 
-        // 2. 機會案件
         updateText('opportunities-count', stats.opportunitiesCount || 0);
-        const opportunitiesTrend = document.getElementById('opportunities-trend');
-        if (opportunitiesTrend) opportunitiesTrend.textContent = stats.opportunitiesCountMonth > 0 ? `+ ${stats.opportunitiesCountMonth} 本月` : '';
+        this._updateTrend('opportunities-trend', stats.opportunitiesCountMonth);
         
-        // 3. 事件紀錄
         updateText('event-logs-count', stats.eventLogsCount || 0);
-        const eventLogsTrend = document.getElementById('event-logs-trend');
-        if (eventLogsTrend) eventLogsTrend.textContent = stats.eventLogsCountMonth > 0 ? `+ ${stats.eventLogsCountMonth} 本月` : '';
+        this._updateTrend('event-logs-trend', stats.eventLogsCountMonth);
 
-        // 4. 成交案件數 (New)
         updateText('won-count', stats.wonCount || 0);
-        const wonTrend = document.getElementById('won-trend');
-        if (wonTrend) wonTrend.textContent = stats.wonCountMonth > 0 ? `+ ${stats.wonCountMonth} 本月` : '';
+        this._updateTrend('won-trend', stats.wonCountMonth);
 
-        // 5. 拜訪公司 MTU (New)
+        // 2. MTU 統計與浮動資訊卡片 (Tooltip)
         updateText('mtu-count', stats.mtuCount || 0);
-        const mtuTrend = document.getElementById('mtu-trend');
-        if (mtuTrend) mtuTrend.textContent = stats.mtuCountMonth > 0 ? `+ ${stats.mtuCountMonth} 本月` : '';
+        this._updateTrend('mtu-trend', stats.mtuCountMonth);
+        
+        // 若有 MTU 詳細資料，則渲染浮動視窗
+        if (stats.mtuDetails) {
+            this._renderMtuTooltip(stats.mtuDetails);
+        }
 
-        // 6. 拜訪公司 SI (New)
         updateText('si-count', stats.siCount || 0);
-        const siTrend = document.getElementById('si-trend');
-        if (siTrend) siTrend.textContent = stats.siCountMonth > 0 ? `+ ${stats.siCountMonth} 本月` : '';
-
-        // 待追蹤 (舊有邏輯，雖然移除了卡片，但若有其他地方用到可保留)
+        this._updateTrend('si-trend', stats.siCountMonth);
+        
         updateText('followup-count', stats.followUpCount || 0);
+
+        // 確保樣式存在
+        this._ensureStyles();
+    },
+
+    _updateTrend(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value > 0 ? `+ ${value} 本月` : '';
+    },
+
+    /**
+     * 渲染 MTU 的浮動資訊視窗
+     */
+    _renderMtuTooltip(details) {
+        const mtuCountEl = document.getElementById('mtu-count');
+        if (!mtuCountEl) return;
+
+        // 找到卡片容器 (.stat-card)
+        const card = mtuCountEl.closest('.stat-card');
+        if (!card) return;
+
+        // 清除舊的 Tooltip
+        const oldTooltip = card.querySelector('.custom-tooltip');
+        if (oldTooltip) oldTooltip.remove();
+
+        // 準備未互動名單 (只顯示前 5 筆，避免太長)
+        const maxDisplay = 5;
+        const inactiveListHtml = details.inactiveNames.slice(0, maxDisplay)
+            .map(name => `<li>❌ ${name}</li>`).join('');
+        const remainingCount = details.inactiveNames.length - maxDisplay;
+        const moreHtml = remainingCount > 0 ? `<li class="more">...還有 ${remainingCount} 家</li>` : '';
+
+        // 建立 Tooltip HTML
+        const tooltip = document.createElement('div');
+        tooltip.className = 'custom-tooltip';
+        tooltip.innerHTML = `
+            <div class="tooltip-header">MTU 拜訪概況</div>
+            <div class="tooltip-row">
+                <span>總目標家數:</span> <strong>${details.totalMtu}</strong>
+            </div>
+            <div class="tooltip-row">
+                <span>已互動:</span> <span class="text-success">${details.activeCount}</span>
+            </div>
+            <div class="tooltip-row">
+                <span>未互動:</span> <span class="text-danger">${details.inactiveCount}</span>
+            </div>
+            ${details.inactiveCount > 0 ? `
+                <div class="tooltip-divider"></div>
+                <div class="tooltip-subtitle">未互動名單 (前 ${maxDisplay} 筆):</div>
+                <ul class="tooltip-list">
+                    ${inactiveListHtml}
+                    ${moreHtml}
+                </ul>
+            ` : '<div class="tooltip-divider"></div><div class="tooltip-subtitle text-success">🎉 全部皆已互動！</div>'}
+        `;
+
+        // 將卡片設為 relative 以便定位
+        card.style.position = 'relative';
+        // 【修改】將 cursor: help 改為 pointer，移除問號樣式
+        card.style.cursor = 'pointer'; 
+        card.appendChild(tooltip);
     },
 
     /**
@@ -166,10 +221,11 @@ const DashboardWidgets = {
     },
 
     _ensureStyles() {
-        if (!document.getElementById('announcement-styles')) {
+        if (!document.getElementById('dashboard-widget-styles')) {
             const style = document.createElement('style');
-            style.id = 'announcement-styles';
+            style.id = 'dashboard-widget-styles';
             style.innerHTML = `
+                /* 公告樣式 */
                 .announcement-item { padding: 1rem; border-radius: var(--rounded-lg); cursor: pointer; transition: background-color 0.2s ease; border: 1px solid var(--border-color); }
                 .announcement-item:hover { background-color: var(--glass-bg); }
                 .announcement-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; gap: 1rem; }
@@ -181,6 +237,104 @@ const DashboardWidgets = {
                 .announcement-footer { margin-top: 0.75rem; display:flex; justify-content: space-between; align-items: center; }
                 .announcement-toggle { margin-right: auto; }
                 .announcement-time { font-size: 0.8rem; color: var(--text-muted); }
+
+                /* 浮動資訊卡片 Tooltip 樣式 */
+                .custom-tooltip {
+                    display: none;
+                    position: absolute;
+                    top: 100%;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(255, 255, 255, 0.98);
+                    backdrop-filter: blur(10px);
+                    border: 1px solid var(--border-color);
+                    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+                    padding: 12px;
+                    border-radius: 8px;
+                    width: 220px;
+                    z-index: 1000;
+                    margin-top: 10px;
+                    font-size: 0.85rem;
+                    text-align: left;
+                    color: var(--text-primary);
+                }
+                
+                /* 三角形箭頭 */
+                .custom-tooltip::before {
+                    content: '';
+                    position: absolute;
+                    top: -6px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    border-width: 0 6px 6px 6px;
+                    border-style: solid;
+                    border-color: transparent transparent var(--border-color) transparent;
+                }
+
+                .stat-card:hover .custom-tooltip {
+                    display: block;
+                    animation: tooltipFadeIn 0.2s ease-out;
+                }
+
+                @keyframes tooltipFadeIn {
+                    from { opacity: 0; transform: translate(-50%, 5px); }
+                    to { opacity: 1; transform: translate(-50%, 0); }
+                }
+
+                .tooltip-header {
+                    font-weight: 700;
+                    margin-bottom: 8px;
+                    text-align: center;
+                    color: var(--primary-color);
+                    border-bottom: 1px solid var(--border-color);
+                    padding-bottom: 4px;
+                }
+
+                .tooltip-row {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 4px;
+                }
+
+                .tooltip-divider {
+                    height: 1px;
+                    background: var(--border-color);
+                    margin: 8px 0;
+                }
+
+                .tooltip-subtitle {
+                    font-weight: 600;
+                    margin-bottom: 4px;
+                    font-size: 0.8rem;
+                    color: var(--text-secondary);
+                }
+
+                .tooltip-list {
+                    list-style: none;
+                    padding: 0;
+                    margin: 0;
+                    max-height: 150px;
+                    overflow-y: auto;
+                }
+
+                .tooltip-list li {
+                    padding: 2px 0;
+                    color: var(--text-secondary);
+                    font-size: 0.8rem;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .tooltip-list li.more {
+                    color: var(--text-muted);
+                    font-style: italic;
+                    text-align: center;
+                    margin-top: 4px;
+                }
+
+                .text-success { color: #10b981; font-weight: 600; }
+                .text-danger { color: #ef4444; font-weight: 600; }
             `;
             document.head.appendChild(style);
         }
