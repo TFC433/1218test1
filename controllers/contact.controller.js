@@ -24,7 +24,8 @@ exports.searchContactList = async (req, res) => {
 exports.upgradeContact = async (req, res) => {
     try {
         const { workflowService } = getServices(req);
-        res.json(await workflowService.upgradeContactToOpportunity(parseInt(req.params.rowIndex), req.body));
+        // 【修正】將 req.user.name (操作者) 傳入 Service
+        res.json(await workflowService.upgradeContactToOpportunity(parseInt(req.params.rowIndex), req.body, req.user.name));
     } catch (error) { handleApiError(res, error, 'Upgrade Contact'); }
 };
 

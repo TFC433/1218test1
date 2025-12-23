@@ -16,10 +16,33 @@ const EventEditorStandalone = (() => {
         painPoints: ['Monitoring', 'Improve OEE', 'Reduce Man-hours', 'Others']
     };
 
+    // 【新增】確保模板已載入
+    async function _ensureTemplateLoaded() {
+        if (document.getElementById('standalone-event-modal')) return;
+        
+        try {
+            const response = await fetch('/views/event-editor.html');
+            if (!response.ok) throw new Error('無法下載編輯器模板');
+            let html = await response.text();
+            
+            // 移除 HTML 中的 script 標籤，避免重複執行初始化
+            html = html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "");
+            
+            const container = document.getElementById('modal-container') || document.body;
+            container.insertAdjacentHTML('beforeend', html);
+        } catch (e) {
+            console.error('載入 Event Editor Template 失敗:', e);
+            throw e;
+        }
+    }
+
     function _init() {
-        if (_isInitialized) return;
+        // 注意：這裡不設 _isInitialized return，因為可能剛載入 HTML 需要重新綁定
+        if (_isInitialized && document.getElementById('standalone-event-modal')) return;
+        
         _modal = document.getElementById('standalone-event-modal');
-        if (!_modal) return;
+        if (!_modal) return; // 如果還是沒有，則退出
+        
         _form = document.getElementById('standalone-event-form');
         
         _inputs = {
@@ -52,14 +75,15 @@ const EventEditorStandalone = (() => {
             closeBtn: document.getElementById('standalone-close-btn')
         };
 
-        _inputs.closeBtn.onclick = _close;
-        _form.onsubmit = _handleSubmit;
-        
-        _form.addEventListener('input', (e) => {
-            if (e.target.tagName.toLowerCase() === 'textarea') {
-                _autoResize(e.target);
-            }
-        });
+        if (_inputs.closeBtn) _inputs.closeBtn.onclick = _close;
+        if (_form) {
+            _form.onsubmit = _handleSubmit;
+            _form.addEventListener('input', (e) => {
+                if (e.target.tagName.toLowerCase() === 'textarea') {
+                    _autoResize(e.target);
+                }
+            });
+        }
 
         _isInitialized = true;
     }
@@ -71,7 +95,19 @@ const EventEditorStandalone = (() => {
     }
 
     async function open(eventId) {
+        // 1. 確保 HTML 存在
+        await _ensureTemplateLoaded();
+
+        // 2. 初始化 DOM 參照
         _init();
+        
+        if (!_modal || !_form) {
+            console.error('無法初始化編輯器 DOM');
+            showNotification('編輯器初始化失敗', 'error');
+            return;
+        }
+
+        // 3. 重置並顯示
         _resetForm();
         _modal.style.display = 'block';
         
@@ -112,15 +148,18 @@ const EventEditorStandalone = (() => {
 
         if (eventData.createdTime) {
             const date = new Date(eventData.createdTime);
+            // 修正時區顯示問題 (簡易處理)
             date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
             _inputs.time.value = date.toISOString().slice(0, 16);
         }
 
         const eventType = eventData.eventType || 'general';
+        // 處理舊資料相容
         const typeToSelect = eventType === 'legacy' ? 'iot' : eventType;
         
         await _applyTypeSwitch(typeToSelect, eventData);
 
+        // 處理參與人員
         _data.ourParticipants.clear();
         const ourManualList = [];
         const teamMembers = window.CRM_APP.systemConfig['團隊成員'] || [];
@@ -142,6 +181,7 @@ const EventEditorStandalone = (() => {
         const currentType = _inputs.type.value;
         if (currentType === newType) return;
 
+        // 檢查是否有正在輸入的資料
         const container = _inputs.specificContainer;
         let hasData = false;
         let mergedData = '';
@@ -211,6 +251,7 @@ const EventEditorStandalone = (() => {
                 _inputs.specificContainer.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:20px;">無專屬欄位設定</p>';
             }
             
+            // 自動調整文字框高度
             _inputs.specificContainer.querySelectorAll('textarea').forEach(_autoResize);
         }
     }
@@ -373,6 +414,7 @@ const EventEditorStandalone = (() => {
 
     function _close() { if (_modal) _modal.style.display = 'none'; }
     function _resetForm() {
+        if (!_form) return;
         _form.reset();
         _data.ourParticipants.clear();
         _data.clientParticipants.clear();
@@ -383,6 +425,7 @@ const EventEditorStandalone = (() => {
         _inputs.workspaceGrid.classList.remove('has-sidebar');
     }
     function _setLoading(isLoading, text) {
+        if (!_inputs.submitBtn) return;
         _inputs.submitBtn.disabled = isLoading;
         _inputs.submitBtn.textContent = isLoading ? text : '儲存';
     }

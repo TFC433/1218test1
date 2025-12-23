@@ -120,9 +120,10 @@ class WorkflowService {
 
     /**
      * 從潛在客戶升級為機會案件的完整流程
+     * 【修正】接收 modifier，若無負責人則操作者自動成為負責人
      */
-    async upgradeContactToOpportunity(contactRowIndex, opportunityData) {
-        console.log('📈 [WorkflowService] **啟動[升級]流程...**');
+    async upgradeContactToOpportunity(contactRowIndex, opportunityData, modifier) {
+        console.log(`📈 [WorkflowService] **啟動[升級]流程... (操作者: ${modifier})**`);
         
         const allSourceContacts = await this.contactReader.getContacts(9999);
         const sourceContact = allSourceContacts.find(c => c.rowIndex === contactRowIndex);
@@ -137,6 +138,11 @@ class WorkflowService {
             mainContact: sourceContact.name,
             contactPhone: sourceContact.mobile || sourceContact.phone,
         };
+
+        // 【邏輯實作】若未指定負責人，操作者自動成為負責人
+        if (!completeOpportunityData.assignee) {
+            completeOpportunityData.assignee = modifier;
+        }
         
         const contactSourceInfo = {
             name: sourceContact.name,
@@ -150,7 +156,10 @@ class WorkflowService {
             rowIndex: sourceContact.rowIndex
         };
         
-        const createdOpportunity = await this._createFullOpportunityWorkflow(completeOpportunityData, contactSourceInfo);
+        // 確保操作者有值
+        const currentOperator = modifier || completeOpportunityData.assignee || '系統';
+
+        const createdOpportunity = await this._createFullOpportunityWorkflow(completeOpportunityData, contactSourceInfo, currentOperator);
 
         return {
             success: true,
@@ -161,9 +170,15 @@ class WorkflowService {
     
     /**
      * 手動建立新機會案件的完整流程
+     * 【修正】接收 modifier，若無負責人則操作者自動成為負責人
      */
-    async createOpportunity(opportunityData) {
-        console.log('🎯 [WorkflowService] **啟動[新增]流程...**');
+    async createOpportunity(opportunityData, modifier) {
+        console.log(`🎯 [WorkflowService] **啟動[新增]流程... (操作者: ${modifier})**`);
+        
+        // 【邏輯實作】若未指定負責人，操作者自動成為負責人
+        if (!opportunityData.assignee) {
+            opportunityData.assignee = modifier;
+        }
         
         const contactSourceInfo = {
             name: opportunityData.mainContact,
@@ -173,7 +188,7 @@ class WorkflowService {
             position: '', 
         };
 
-        const createdOpportunity = await this._createFullOpportunityWorkflow(opportunityData, contactSourceInfo);
+        const createdOpportunity = await this._createFullOpportunityWorkflow(opportunityData, contactSourceInfo, modifier);
         
         return {
             success: true,
@@ -184,16 +199,19 @@ class WorkflowService {
 
     /**
      * 內部使用的核心機會建立工作流程
-     * 【關鍵修改】改為動態讀取標題列，依據 config 定義填入資料，防止欄位錯位
+     * 【修正】接收 modifier 作為互動紀錄的 Recorder
      */
-    async _createFullOpportunityWorkflow(opportunityData, contactSourceInfo) {
-        const modifier = opportunityData.assignee || '系統';
-        console.log(`⚙️ [WorkflowService] **執行統一的核心機會建立流程 (操作者: ${modifier})...**`);
+    async _createFullOpportunityWorkflow(opportunityData, contactSourceInfo, modifier) {
+        // 確保有操作者，若無則 fallback
+        const currentOperator = modifier || '系統';
         
-        const companyData = await this.companyWriter.getOrCreateCompany(opportunityData.customerCompany, contactSourceInfo, modifier, opportunityData);
+        console.log(`⚙️ [WorkflowService] **執行統一的核心機會建立流程 (操作者: ${currentOperator})...**`);
+        
+        // 1. 建立公司與聯絡人 (使用當前操作者紀錄)
+        const companyData = await this.companyWriter.getOrCreateCompany(opportunityData.customerCompany, contactSourceInfo, currentOperator, opportunityData);
         console.log(`   - 步驟 1/6: 公司資料處理完畢 (ID: ${companyData.id})`);
 
-        const contactData = await this.contactWriter.getOrCreateContact(contactSourceInfo, companyData, modifier);
+        const contactData = await this.contactWriter.getOrCreateContact(contactSourceInfo, companyData, currentOperator);
         console.log(`   - 步驟 2/6: 聯絡人資料處理完畢 (ID: ${contactData.id})`);
 
         console.log('   - 步驟 3/6: 準備寫入機會案件...');
@@ -280,7 +298,7 @@ class WorkflowService {
         setVal(F.DRIVE_LINK, ''); // Drive 連結通常由後續程序補上
         setVal(F.LAST_UPDATE_TIME, now);
         setVal(F.NOTES, opportunityData.notes || '');
-        setVal(F.LAST_MODIFIER, modifier);
+        setVal(F.LAST_MODIFIER, currentOperator); // 使用實際操作者作為最後修改者
         
         setVal(F.HISTORY, ''); // 階段歷程初始為空
         setVal(F.PARENT_ID, opportunityData.parentOpportunityId || '');
@@ -304,7 +322,7 @@ class WorkflowService {
         const match = updatedRange.match(/!A(\d+)/);
         const newRowIndex = match ? parseInt(match[1]) : null;
 
-        // 建構回傳物件 (這裡為了前端一致性，手動對映回屬性名稱)
+        // 建構回傳物件
         const createdOpportunity = {
             rowIndex: newRowIndex, 
             opportunityId: opportunityId, 
@@ -315,18 +333,18 @@ class WorkflowService {
             opportunityType: opportunityData.opportunityType, 
             currentStage: currentStage, 
             createdTime: now,
-            // ...其他欄位視前端需求回傳，主要 ID 和 Index 最重要
         };
         console.log(`   - 步驟 3/6: 機會案件資料已寫入 (ID: ${opportunityId}, Row: ${newRowIndex})`);
 
+        // 【修正】互動紀錄：明確指出負責人，且 recorder 使用實際操作者
         const interactionData = {
             opportunityId: opportunityId,
             eventType: '系統事件',
             eventTitle: contactSourceInfo.rowIndex ? '從潛在客戶升級為機會' : '手動建立新機會',
             contentSummary: contactSourceInfo.rowIndex ?
-                `將 "原始名片資料" 中的 ${contactSourceInfo.name} (${contactSourceInfo.company}) 升級為正式機會。` :
-                `手動建立新的機會案件 "${opportunityData.opportunityName}"。`,
-            recorder: modifier,
+                `將 "原始名片資料" 中的 ${contactSourceInfo.name} (${contactSourceInfo.company}) 升級為正式機會。 (負責人: ${opportunityData.assignee})` :
+                `手動建立新的機會案件 "${opportunityData.opportunityName}"。 (負責人: ${opportunityData.assignee})`,
+            recorder: currentOperator, // 關鍵：使用傳入的操作者 B
         };
         await this.interactionWriter.createInteraction(interactionData);
         console.log(`   - 步驟 4/6: 初始互動紀錄已建立`);
@@ -334,7 +352,7 @@ class WorkflowService {
         await this.opportunityWriter.linkContactToOpportunity(
             opportunityId,
             contactData.id,
-            modifier
+            currentOperator // 使用實際操作者
         );
         console.log(`   - 步驟 5/6: 主要聯絡人關聯已建立`);
         

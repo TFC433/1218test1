@@ -38,7 +38,8 @@ exports.getOpportunityDetails = async (req, res) => {
 exports.createOpportunity = async (req, res) => {
     try {
         const { workflowService } = getServices(req);
-        res.json(await workflowService.createOpportunity(req.body));
+        // 【修正】將 req.user.name 作為第二個參數傳入，確保 Service 層知道是誰操作的
+        res.json(await workflowService.createOpportunity(req.body, req.user.name));
     } catch (error) { handleApiError(res, error, 'Create Opp'); }
 };
 
