@@ -21,23 +21,31 @@ class DashboardService {
     }
 
     async getDashboardData() {
-        console.log('📊 [DashboardService] 執行主儀表板資料整合...');
+        console.log('📊 [DashboardService] 執行主儀表板資料整合 (分批請求模式)...');
 
         const today = new Date();
         const thisWeekId = this.dateHelpers.getWeekId(today);
 
+        // 【優化】將 API 請求拆分為兩批執行，避免瞬間觸發 429 Too Many Requests 錯誤
+
+        // Batch 1: 核心業務資料 (優先載入)
         const [
             opportunitiesRaw,
             contacts,
-            interactions,
+            interactions
+        ] = await Promise.all([
+            this.opportunityReader.getOpportunities(),
+            this.contactReader.getContacts(),
+            this.interactionReader.getInteractions()
+        ]);
+
+        // Batch 2: 次要/參考資料 (等待 Batch 1 完成後執行，降低併發量)
+        const [
             calendarData,
             eventLogs,
             systemConfig,
             companies
         ] = await Promise.all([
-            this.opportunityReader.getOpportunities(),
-            this.contactReader.getContacts(),
-            this.interactionReader.getInteractions(),
             this.calendarService.getThisWeekEvents(),
             this.eventLogReader.getEventLogs(),
             this.systemReader.getSystemConfig(),
